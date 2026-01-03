@@ -344,7 +344,7 @@ data class CrearSalaState(
     val isPrivate: Boolean = false
 )
 data class UnirseSalaState(
-    val roomCode: String = "a"
+    val roomCode: String = ""
 )
 
 
