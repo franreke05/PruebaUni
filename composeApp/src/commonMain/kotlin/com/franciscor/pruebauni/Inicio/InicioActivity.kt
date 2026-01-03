@@ -343,6 +343,10 @@ data class CrearSalaState(
     val maxPlayers: Int = 2,
     val isPrivate: Boolean = false
 )
+data class UnirseSalaState(
+    val roomCode: String = ""
+)
+
 
 sealed interface InicioScreen {
     data object Decide : InicioScreen
@@ -356,14 +360,22 @@ fun InicioFlow() {
     var screen by remember { mutableStateOf<InicioScreen>(InicioScreen.Decide) }
     // Estado unificado del formulario de crear sala.
     var crearSalaState by remember { mutableStateOf(CrearSalaState()) }
+    // Estado unificado del formulario de unirse sala.
+    var unirseSalaState by remember { mutableStateOf(UnirseSalaState()) }
     // Selecciona que pantalla renderizar.
     when (screen) {
         // Pantalla de decision inicial.
         InicioScreen.Decide -> InicioParaDecidirHost(
             // Accion cuando elige crear sala.
-            onCrearSala = { screen = InicioScreen.Crear },
+            onCrearSala = {
+                screen = InicioScreen.Crear
+                          },
             // Accion cuando elige unirse.
-            onUnirseSala = { screen = InicioScreen.Unirse }
+            onUnirseSala = {
+
+                screen = InicioScreen.Unirse
+
+            }
         )
         // Pantalla de crear sala.
         InicioScreen.Crear -> CrearSala(
@@ -376,14 +388,25 @@ fun InicioFlow() {
             // Actualiza privacidad.
             onPrivateChange = { crearSalaState = crearSalaState.copy(isPrivate = it) },
             // Placeholder de crear sala.
-            onCrearSala = { },
+            onCrearSala = {
+
+            },
             // Vuelve a la pantalla inicial.
             onVolver = { screen = InicioScreen.Decide }
         )
         // Pantalla de unirse (placeholder).
         InicioScreen.Unirse -> UnirsePlaceholder(
+            state = unirseSalaState,
             // Vuelve a la pantalla inicial.
-            onVolver = { screen = InicioScreen.Decide }
+            onCodigoChange = {
+                unirseSalaState = unirseSalaState.copy(roomCode = it)
+
+            },
+            onVolver = { screen = InicioScreen.Decide },
+            onUnirseSala = {
+
+            },
+
         )
     }
 }
@@ -673,7 +696,10 @@ fun CrearSala(
 
 @Composable
 fun UnirsePlaceholder(
-    onVolver: () -> Unit
+    state: UnirseSalaState,
+    onVolver: () -> Unit,
+    onCodigoChange: (String) -> Unit,
+    onUnirseSala: () -> Unit
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -690,7 +716,7 @@ fun UnirsePlaceholder(
         val titleSize = (minDim.value * 0.07f).sp
         val bodySize = (minDim.value * 0.033f).sp
         val panelShape = RoundedCornerShape(minDim * 0.06f)
-
+        val buttonShape = RoundedCornerShape(minDim * 0.05f)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -739,21 +765,51 @@ fun UnirsePlaceholder(
                     verticalArrangement = Arrangement.spacedBy(minDim * 0.02f)
                 ) {
                     Text(
-                        "Placeholder de unirse",
+                        "Introduce el codigo de la sala",
                         style = TextStyle(
                             color = Color(0xFFE2D8C7),
                             fontSize = bodySize,
                             fontWeight = FontWeight.Medium
                         )
                     )
+                    OutlinedTextField(
+                        value = state.roomCode,
+                        onValueChange = { onCodigoChange(it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            fontSize = bodySize,
+                            color = Color(0xFFF4F1E9)
+                        )
+                    )
                     Text(
-                        "Aqui ira el ingreso de codigo y la validacion",
+                        "Aqui ira el ingreso de codigo",
                         style = TextStyle(
                             color = Color(0xFFB7AD9B),
                             fontSize = (minDim.value * 0.028f).sp,
                             fontWeight = FontWeight.Medium
                         )
                     )
+                    Spacer(Modifier.height(minDim * 0.01f))
+                    Button(
+                        onClick = onUnirseSala,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(minDim * 0.09f),
+                        shape = buttonShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFF0D79C),
+                            contentColor = Color(0xFF1A1A1A)
+                        )
+                    ) {
+                        Text(
+                            "Crear sala",
+                            style = TextStyle(
+                                fontSize = bodySize,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        )
+                    }
                 }
             }
         }

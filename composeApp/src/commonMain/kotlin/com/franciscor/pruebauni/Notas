@@ -1,0 +1,48 @@
+Para Alex:
+Revisa este contenido y tambien ControladorIncio, para que puedas entender el flujo.
+Tienes que crear una carpeta (click derecho en com.franscor.pruebauni) y en package,
+Entonces en esa carpeta agregas la documentación (para que yo sepa como implementarla)
+y las funciones "fun" con una simple linea arriba (como un id) para que sepa yo que hace.
+
+Además seguire aqui agregando posibles ideas para mejorar nuestro juego del uno
+
+
+
+
+
+ Notas para el login y base de datos:
+ Se necesita tener un login minimo para poder identificar al usuario para que se pueda o no meter las partidas
+ ademas que para el codigo, el numero de jugadores y las configuraciones de la partida se necesita una base de
+ datos basica como intermediaria.
+
+
+
+ Notas Para la partida :
+
+ 1º Tablero
+    Las posiciones de los usuarios tienen que ser relativas y siempre cerrar un circulo.
+    Da igual que sea una partida de 2 o de 6 jugadores siempre se tiene que ver limpio y espacioso.
+    Además en el tablero se tienen que ver a los demás usuarios como monigotes, sentados en su respectivo sitio,
+    mientras que el jugador vea sus cartas.
+
+2º Animaciones (BETA)
+    En las animaciones hay que tener cuidado por lo siguiente, se tiene que ver a la vez y el problema
+    grande es que el usuario que tire la carta, vera primero la animación.
+
+    Posibles Soluciones
+        1. Precargar las animaciones en las cartas y que cuando el usuario que tenga el turno y tire la carta
+        a los demás usuarios antes que al primero y sincronizar a los demás usuarios con el que tira la carta
+
+        2.hacer dos animaciones, el usuario que tiene el turno tendra las dos animaciones mientras que los
+        demás solo una, y básicamente la primera animación servira para poder sincronizar lo que ven los otros
+        usuarios con el que tira la carta (Opción favorita/Mayor trabajo)
+
+        3. No poner animaciones y que el juego se vea más fluido/soso.
+
+3º Lobby (anterior pantalla)
+    En la partida (default) se podrá jugar con la baraja básica del uno, pero cuando se cree la partida
+    (en la pantalla anterior), dependiendo lo que el anfitrion decida en el lobby y que podra aceptar o
+    elminar a los demás , además que podrá configurar la partida como por ejemplo la baraja, porcentaje
+    de +4 o +2.
+
+
