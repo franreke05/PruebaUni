@@ -1,0 +1,21 @@
+Plataforma que voy a usar: Firebase
+
+Objetivo:
+- Solo identificar al usuario en el registro (uid + nombre).
+- Mapear usuarios a A/B/C/D cuando entren a una sala.
+
+Modelo minimo (Firestore):
+- users/{uid}
+  - name: string
+  - createdAt: serverTimestamp
+  - lastSeen: serverTimestamp (opcional)
+- rooms/{roomId} (opcional, solo para letras)
+  - code: string corto
+  - seats: {A: uid, B: uid, C: uid, D: uid}
+  - createdAt: serverTimestamp
+
+Flujo:
+1) Firebase Auth anonimo -> uid estable.
+2) Registro: crear/actualizar users/{uid}.
+3) Crear/unirse sala: set/merge de seats.
+4) El juego (mazo, turnos, manos) no se guarda en BD.

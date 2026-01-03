@@ -52,18 +52,18 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 
 // UI de inicio/mesa. Esta capa solo renderiza estado y dispara acciones.
-// Implementacion Firebase (resumen):
-// 1) El ControladorInicio expone un StateFlow/UiState con datos de sala/jugadores/turno/mesa.
-// 2) Desde el Composable solo llamas a acciones del controlador (crearSala, unirseSala, jugarCarta, robar).
-// 3) El controlador escucha snapshots de Firestore y actualiza el estado; aqui solo lees ese estado.
-// 4) Muestra estados de carga/error (sala inexistente, desconexion, permiso).
+// Implementacion Firebase (minima):
+// 1) El ControladorInicio expone StateFlow/UiState con usuario y sala (solo identidad).
+// 2) Desde el Composable solo llamas a acciones del controlador (registrar, crearSala, unirseSala).
+// 3) El controlador escucha users/rooms y actualiza el estado; aqui solo lees ese estado.
+// 4) El juego (cartas/turnos) queda fuera de la BD.
 
 
 // Flujo Firebase que debes conectar a esta UI:
-// - Pantalla Lobby: crear sala -> Firestore crea doc en "rooms" con codigo corto y estado inicial.
-// - Unirse: el usuario ingresa el codigo, se agrega a "rooms/{id}/players".
-// - Mesa: renderiza todos desde RoomState (mano propia, carta actual, turno, jugadores).
-// - Acciones: jugar/robar pasan por ControladorInicio, que valida y escribe en Firestore.
+// - Registro: crea/actualiza users/{uid} con nombre.
+// - Crear sala: Firestore crea doc en "rooms" con code y seats vacios.
+// - Unirse: el usuario ingresa el code y se asigna un asiento A/B/C/D en seats.
+// - Mesa: renderiza identidad (letra + nombre); el juego va local/host.
 @Composable
 fun Tablero() {
     BoxWithConstraints(
@@ -332,11 +332,11 @@ fun Tablero() {
 }
 
 /*
-Inicio basado en Firebase, sin peer-to-peer:
-- El jugador elige "Crear sala" (host) o "Unirse" (invitado).
-- Host crea el doc de sala y comparte el codigo.
-- Invitado usa el codigo para unirse al doc y al sub-collection de players.
-- UI siempre deriva del estado remoto; no uses estado local como fuente de verdad.
+Inicio basado en Firebase (solo identidad):
+- El jugador registra su nombre y obtiene uid anonimo.
+- Host crea la sala y comparte el codigo.
+- Invitado usa el codigo para ocupar un asiento A/B/C/D.
+- La UI solo lee identidad/sala; el juego va por otra via.
 */
 data class CrearSalaState(
     val roomName: String = "",
