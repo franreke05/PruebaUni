@@ -1,7 +1,6 @@
 package com.franciscor.pruebauni.Inicio
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -9,18 +8,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -42,14 +38,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
-import kotlin.math.roundToInt
+import com.franciscor.pruebauni.Lobby.LobbyFlow
 
 // UI de inicio/mesa. Esta capa solo renderiza estado y dispara acciones.
 // Implementacion Firebase (minima):
@@ -73,75 +68,66 @@ Inicio basado en Firebase (solo identidad):
 - Invitado usa el codigo para ocupar un asiento A/B/C/D.
 - La UI solo lee identidad/sala; el juego va por otra via.
 */
-data class CrearSalaState(
-    val roomName: String = "",
-    val maxPlayers: Int = 2,
-    val isPrivate: Boolean = false
-)
-data class UnirseSalaState(
-    val roomCode: String = ""
-)
-
-
-sealed interface InicioScreen {
-    data object Decide : InicioScreen
-    data object Crear : InicioScreen
-    data object Unirse : InicioScreen
-}
 
 @Composable
 fun InicioFlow() {
     // Estado de la pantalla actual.
-    var screen by remember { mutableStateOf<InicioScreen>(InicioScreen.Decide) }
-    // Estado unificado del formulario de crear sala.
-    var crearSalaState by remember { mutableStateOf(CrearSalaState()) }
-    // Estado unificado del formulario de unirse sala.
-    var unirseSalaState by remember { mutableStateOf(UnirseSalaState()) }
+    var uiState by remember { mutableStateOf(InicioUiState()) }
+    val canCreateLobby = ControladorInicio.puedeCrearSala(uiState.crearSalaState)
     // Selecciona que pantalla renderizar.
-    when (screen) {
+    when (val current = uiState.screen) {
         // Pantalla de decision inicial.
         InicioScreen.Decide -> InicioParaDecidirHost(
             // Accion cuando elige crear sala.
             onCrearSala = {
-                screen = InicioScreen.Crear
+                uiState = ControladorInicio.irACrear(uiState)
                           },
             // Accion cuando elige unirse.
             onUnirseSala = {
-
-                screen = InicioScreen.Unirse
+                uiState = ControladorInicio.irAUnirse(uiState)
 
             }
         )
         // Pantalla de crear sala.
         InicioScreen.Crear -> CrearSala(
             // Estado actual del formulario.
-            state = crearSalaState,
+            state = uiState.crearSalaState,
+            canCreate = canCreateLobby,
             // Actualiza nombre de sala.
-            onRoomNameChange = { crearSalaState = crearSalaState.copy(roomName = it) },
+            onRoomNameChange = { uiState = ControladorInicio.actualizarNombreSala(uiState, it) },
             // Actualiza max jugadores.
-            onMaxPlayersChange = { crearSalaState = crearSalaState.copy(maxPlayers = it) },
+            onMaxPlayersChange = { uiState = ControladorInicio.actualizarMaxPlayersDesdeSlider(uiState, it) },
             // Actualiza privacidad.
-            onPrivateChange = { crearSalaState = crearSalaState.copy(isPrivate = it) },
+            onPrivateChange = { uiState = ControladorInicio.actualizarPrivacidad(uiState, it) },
             // Placeholder de crear sala.
             onCrearSala = {
-
+                uiState = ControladorInicio.crearLobby(uiState)
             },
             // Vuelve a la pantalla inicial.
-            onVolver = { screen = InicioScreen.Decide }
+            onVolver = { uiState = ControladorInicio.irADecide(uiState) }
         )
         // Pantalla de unirse (placeholder).
         InicioScreen.Unirse -> UnirsePlaceholder(
-            state = unirseSalaState,
+            state = uiState.unirseSalaState,
             // Vuelve a la pantalla inicial.
             onCodigoChange = {
-                unirseSalaState = unirseSalaState.copy(roomCode = it)
+                uiState = ControladorInicio.actualizarCodigoSala(uiState, it)
 
             },
-            onVolver = { screen = InicioScreen.Decide },
+            onVolver = { uiState = ControladorInicio.irADecide(uiState) },
             onUnirseSala = {
 
             },
 
+        )
+        is InicioScreen.Lobby -> LobbyFlow(
+            state = current.lobbyState,
+            onVolver = { uiState = ControladorInicio.irADecide(uiState) },
+            onToggleConfig = { uiState = ControladorInicio.toggleConfigLobby(uiState) },
+            onCartasPorJugadorChange = { uiState = ControladorInicio.actualizarCartasPorJugadorLobby(uiState, it) },
+            onEspecialesChange = { uiState = ControladorInicio.actualizarEspecialesLobby(uiState, it) },
+            onMaxRobarChange = { uiState = ControladorInicio.actualizarMaxRobarLobby(uiState, it) },
+            onEmpezarPartida = { uiState = ControladorInicio.empezarPartida(uiState) }
         )
     }
 }
@@ -257,8 +243,9 @@ fun InicioParaDecidirHost(
 @Composable
 fun CrearSala(
     state: CrearSalaState,
+    canCreate: Boolean,
     onRoomNameChange: (String) -> Unit,
-    onMaxPlayersChange: (Int) -> Unit,
+    onMaxPlayersChange: (Float) -> Unit,
     onPrivateChange: (Boolean) -> Unit,
     onCrearSala: () -> Unit,
     onVolver: () -> Unit
@@ -370,9 +357,7 @@ fun CrearSala(
                         }
                         Slider(
                             value = state.maxPlayers.toFloat(),
-                            onValueChange = { value ->
-                                onMaxPlayersChange(value.roundToInt().coerceIn(2, 6))
-                            },
+                            onValueChange = onMaxPlayersChange,
                             valueRange = 2f..6f
                         )
                     }
@@ -406,13 +391,16 @@ fun CrearSala(
                     Spacer(Modifier.height(minDim * 0.01f))
                     Button(
                         onClick = onCrearSala,
+                        enabled = canCreate,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(minDim * 0.09f),
                         shape = buttonShape,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color(0xFFF0D79C),
-                            contentColor = Color(0xFF1A1A1A)
+                            contentColor = Color(0xFF1A1A1A),
+                            disabledContainerColor = Color(0xFFE4D3A7),
+                            disabledContentColor = Color(0xFF8B7E66)
                         )
                     ) {
                         Text(
