@@ -13,6 +13,7 @@ composeMultiplatform = "1.9.3"
 junit = "4.13.2"
 kotlin = "2.1.21"
 firebase-bom = "33.7.0"
+gitlive-firebase = "1.13.0"
 google-services = "4.4.2"
 kotlinx-coroutines-play-services = "1.8.1"
 
@@ -30,6 +31,7 @@ androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebase-bom" }
 firebase-auth-ktx = { module = "com.google.firebase:firebase-auth-ktx" }
 firebase-firestore-ktx = { module = "com.google.firebase:firebase-firestore-ktx" }
+gitlive-firebase-database = { module = "dev.gitlive:firebase-database", version.ref = "gitlive-firebase" }
 kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "kotlinx-coroutines-play-services" }
 
 [plugins]
@@ -38,4 +40,5 @@ androidLibrary = { id = "com.android.library", version.ref = "agp" }
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 googleServices = { id = "com.google.gms.google-services", version.ref = "google-services" }

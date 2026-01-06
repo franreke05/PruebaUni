@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
@@ -31,10 +32,6 @@ kotlin {
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
-            implementation(platform("com.google.firebase:firebase-bom:${libs.versions.firebase.bom.get()}"))
-            implementation(libs.firebase.auth.ktx)
-            implementation(libs.firebase.firestore.ktx)
-            implementation(libs.kotlinx.coroutines.play.services)
         }
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -46,6 +43,7 @@ kotlin {
             implementation(compose.components.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation(libs.gitlive.firebase.database)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

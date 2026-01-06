@@ -15,7 +15,9 @@ data class LobbyUiState(
     val maxPlayers: Int,
     val players: List<LobbyPlayer>,
     val config: LobbyConfig,
-    val showConfig: Boolean = false
+    val showConfig: Boolean = false,
+    val isLocalHost: Boolean = false,
+    val isStarted: Boolean = false
 )
 
 data class LobbyConfig(
@@ -38,7 +40,9 @@ object ControladorLobby {
             roomCode = code,
             maxPlayers = normalizedMax,
             players = players,
-            config = LobbyConfig()
+            config = LobbyConfig(),
+            isLocalHost = true,
+            isStarted = false
         )
     }
 

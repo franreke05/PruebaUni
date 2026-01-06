@@ -167,6 +167,7 @@ fun LobbyFlow(
                 )
             )
 
+            val canEditConfig = state.isLocalHost && !state.isStarted
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -203,7 +204,8 @@ fun LobbyFlow(
                 item {
                     LobbyConfigCard(
                         config = state.config,
-                        isOpen = state.showConfig,
+                        isOpen = state.showConfig && canEditConfig,
+                        canEdit = canEditConfig,
                         onToggle = onToggleConfig,
                         onCartasPorJugadorChange = onCartasPorJugadorChange,
                         onEspecialesChange = onEspecialesChange,
@@ -214,13 +216,15 @@ fun LobbyFlow(
                         titleFont = unoFont
                     )
                 }
-                item {
-                    LobbyStartButton(
-                        onEmpezarPartida = onEmpezarPartida,
-                        enabled = state.players.size >= state.maxPlayers,
-                        bodySize = bodySize,
-                        titleFont = unoFont
-                    )
+                if (state.isLocalHost && !state.isStarted) {
+                    item {
+                        LobbyStartButton(
+                            onEmpezarPartida = onEmpezarPartida,
+                            enabled = state.players.size >= 2,
+                            bodySize = bodySize,
+                            titleFont = unoFont
+                        )
+                    }
                 }
             }
         }
@@ -311,6 +315,7 @@ private fun LobbyHeaderCard(
 private fun LobbyConfigCard(
     config: LobbyConfig,
     isOpen: Boolean,
+    canEdit: Boolean,
     onToggle: () -> Unit,
     onCartasPorJugadorChange: (Float) -> Unit,
     onEspecialesChange: (Float) -> Unit,
@@ -348,6 +353,7 @@ private fun LobbyConfigCard(
                 )
                 Button(
                     onClick = onToggle,
+                    enabled = canEdit,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFFF0D79C),
                         contentColor = Color(0xFF1A1A1A)
@@ -380,6 +386,7 @@ private fun LobbyConfigCard(
                     value = config.cardsPerPlayer.toFloat(),
                     valueRange = 3f..15f,
                     onValueChange = onCartasPorJugadorChange,
+                    enabled = canEdit,
                     bodySize = bodySize,
                     labelSize = labelSize,
                     titleFont = titleFont
@@ -390,6 +397,7 @@ private fun LobbyConfigCard(
                     value = config.specialCardsPercent.toFloat(),
                     valueRange = 0f..100f,
                     onValueChange = onEspecialesChange,
+                    enabled = canEdit,
                     bodySize = bodySize,
                     labelSize = labelSize,
                     titleFont = titleFont
@@ -400,6 +408,7 @@ private fun LobbyConfigCard(
                     value = config.maxDrawCards.toFloat(),
                     valueRange = 1f..6f,
                     onValueChange = onMaxRobarChange,
+                    enabled = canEdit,
                     bodySize = bodySize,
                     labelSize = labelSize,
                     titleFont = titleFont
@@ -416,6 +425,7 @@ private fun LobbyConfigSlider(
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     onValueChange: (Float) -> Unit,
+    enabled: Boolean,
     bodySize: TextUnit,
     labelSize: TextUnit,
     titleFont: FontFamily
@@ -447,7 +457,8 @@ private fun LobbyConfigSlider(
         Slider(
             value = value,
             onValueChange = onValueChange,
-            valueRange = valueRange
+            valueRange = valueRange,
+            enabled = enabled
         )
     }
 }

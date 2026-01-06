@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -32,6 +31,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -47,9 +47,13 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
+import com.franciscor.pruebauni.Base_Datos.DbLobbyConfig
+import com.franciscor.pruebauni.Base_Datos.DbSala
 import com.franciscor.pruebauni.Base_Datos.FuncionesGlobales
+import com.franciscor.pruebauni.Lobby.LobbyConfig
 import com.franciscor.pruebauni.Lobby.LobbyFlow
-import com.franciscor.pruebauni.Login.LoginPopup
+import com.franciscor.pruebauni.Lobby.LobbyPlayer
+import com.franciscor.pruebauni.Lobby.LobbyUiState
 import com.franciscor.pruebauni.Partida.PartidaPrefs
 import com.franciscor.pruebauni.Partida.Tablero
 import com.franciscor.pruebauni.Partida.rememberPartidaStorage
@@ -81,80 +85,253 @@ Inicio basado en Firebase (solo identidad):
 @Composable
 fun InicioFlow() {
     val partidaStorage = rememberPartidaStorage()
+    val coroutineScope = rememberCoroutineScope()
     // Estado de la pantalla actual.
     var uiState by remember { mutableStateOf(InicioUiState()) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     val canCreateLobby = ControladorInicio.puedeCrearSala(uiState.crearSalaState)
-    // Selecciona que pantalla renderizar.
-    when (val current = uiState.screen) {
-        // Pantalla de decision inicial.
-        InicioScreen.Decide -> InicioParaDecidirHost(
-            // Accion cuando elige crear sala.
-            onCrearSala = {
-                uiState = ControladorInicio.irACrear(uiState)
+    LaunchedEffect(uiState.screen) {
+        errorMessage = null
+    }
+    val lobbyCode = (uiState.screen as? InicioScreen.Lobby)?.lobbyState?.roomCode
+    DisposableEffect(lobbyCode) {
+        if (lobbyCode.isNullOrBlank()) {
+            onDispose {}
+        } else {
+            val handle = runCatching {
+                FuncionesGlobales.escucharSalaPorCodigo(lobbyCode) { sala ->
+                    if (uiState.screen is InicioScreen.Partida) {
+                        return@escucharSalaPorCodigo
+                    }
+                    val currentLobby = (uiState.screen as? InicioScreen.Lobby)?.lobbyState
+                    val updatedLobby = sala?.toLobbyUiState(currentLobby)
+                    if (updatedLobby != null) {
+                        var nextState = uiState.copy(screen = InicioScreen.Lobby(updatedLobby))
+                        if (updatedLobby.isStarted) {
+                            partidaStorage.save(
+                                PartidaPrefs(
+                                    roomName = updatedLobby.roomName,
+                                    numPlayers = maxOf(2, updatedLobby.players.size)
+                                )
+                            )
+                            nextState = ControladorInicio.empezarPartida(nextState)
+                        }
+                        uiState = nextState
+                    }
+                }
+            }.getOrNull()
+            onDispose {
+                handle?.remove()
+            }
+        }
+    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Selecciona que pantalla renderizar.
+        when (val current = uiState.screen) {
+            // Pantalla de decision inicial.
+            InicioScreen.Decide -> InicioParaDecidirHost(
+                // Accion cuando elige crear sala.
+                onCrearSala = {
+                    errorMessage = null
+                    uiState = ControladorInicio.irACrear(uiState)
                           },
-            // Accion cuando elige unirse.
-            onUnirseSala = {
-                uiState = ControladorInicio.irAUnirse(uiState)
+                // Accion cuando elige unirse.
+                onUnirseSala = {
+                    errorMessage = null
+                    uiState = ControladorInicio.irAUnirse(uiState)
 
-            }
-        )
-        // Pantalla de crear sala.
-        InicioScreen.Crear -> CrearSala(
-            // Estado actual del formulario.
-            state = uiState.crearSalaState,
-            canCreate = canCreateLobby,
-            // Actualiza nombre de sala.
-            onRoomNameChange = { uiState = ControladorInicio.actualizarNombreSala(uiState, it) },
-            // Actualiza max jugadores.
-            onMaxPlayersChange = { uiState = ControladorInicio.actualizarMaxPlayersDesdeSlider(uiState, it) },
-            // Actualiza privacidad.
-            onPrivateChange = { uiState = ControladorInicio.actualizarPrivacidad(uiState, it) },
-            // Placeholder de crear sala.
-            onCrearSala = {
-                uiState = ControladorInicio.crearLobby(uiState)
-            },
-            // Vuelve a la pantalla inicial.
-            onVolver = { uiState = ControladorInicio.irADecide(uiState) }
-        )
-        // Pantalla de unirse (placeholder).
-        InicioScreen.Unirse -> UnirsePlaceholder(
-            state = uiState.unirseSalaState,
-            // Vuelve a la pantalla inicial.
-            onCodigoChange = {
-                uiState = ControladorInicio.actualizarCodigoSala(uiState, it)
+                }
+            )
+            // Pantalla de crear sala.
+            InicioScreen.Crear -> CrearSala(
+                // Estado actual del formulario.
+                state = uiState.crearSalaState,
+                canCreate = canCreateLobby,
+                errorMessage = errorMessage,
+                // Actualiza nombre de sala.
+                onRoomNameChange = { uiState = ControladorInicio.actualizarNombreSala(uiState, it) },
+                // Actualiza max jugadores.
+                onMaxPlayersChange = { uiState = ControladorInicio.actualizarMaxPlayersDesdeSlider(uiState, it) },
+                // Actualiza privacidad.
+                onPrivateChange = { uiState = ControladorInicio.actualizarPrivacidad(uiState, it) },
+                // Crear sala en Firebase y mover al lobby.
+                onCrearSala = {
+                    if (canCreateLobby) {
+                        errorMessage = null
+                        coroutineScope.launch {
+                            runCatching {
+                                FuncionesGlobales.crearPartida(
+                                    uiState.crearSalaState.roomName,
+                                    uiState.crearSalaState.maxPlayers
+                                )
+                            }.onSuccess {
+                                val codigo = FuncionesGlobales.ultimoCodigoCreado
+                                val nextState = ControladorInicio.crearLobby(uiState)
+                                val screen = nextState.screen as? InicioScreen.Lobby
+                                if (screen != null) {
+                                    val updatedLobby = if (!codigo.isNullOrBlank()) {
+                                        screen.lobbyState.copy(roomCode = codigo)
+                                    } else {
+                                        screen.lobbyState
+                                    }
+                                    uiState = nextState.copy(screen = screen.copy(lobbyState = updatedLobby))
+                                } else {
+                                    errorMessage = "No se pudo abrir el lobby"
+                                }
+                            }.onFailure { error ->
+                                errorMessage = error.message ?: "No se pudo crear la sala"
+                            }
+                        }
+                    }
+                },
+                // Vuelve a la pantalla inicial.
+                onVolver = {
+                    errorMessage = null
+                    uiState = ControladorInicio.irADecide(uiState)
+                }
+            )
+            // Pantalla de unirse (placeholder).
+            InicioScreen.Unirse -> UnirsePlaceholder(
+                state = uiState.unirseSalaState,
+                errorMessage = errorMessage,
+                // Vuelve a la pantalla inicial.
+                onCodigoChange = {
+                    uiState = ControladorInicio.actualizarCodigoSala(uiState, it)
 
-            },
-            onVolver = { uiState = ControladorInicio.irADecide(uiState) },
-            onUnirseSala = {
+                },
+                onVolver = {
+                    errorMessage = null
+                    uiState = ControladorInicio.irADecide(uiState)
+                },
+                onUnirseSala = {
+                    val codigo = uiState.unirseSalaState.roomCode.trim()
+                    if (codigo.isNotEmpty()) {
+                        errorMessage = null
+                        coroutineScope.launch {
+                            runCatching {
+                                FuncionesGlobales.unirseAPartida(codigo)
+                                FuncionesGlobales.leerSalaPorCodigo(codigo)
+                            }.onSuccess { sala ->
+                                val lobbyState = sala?.toLobbyUiState(null)
+                                if (lobbyState != null) {
+                                    uiState = uiState.copy(screen = InicioScreen.Lobby(lobbyState))
+                                } else {
+                                    errorMessage = "No se encontro la sala"
+                                }
+                            }.onFailure { error ->
+                                errorMessage = error.message ?: "No se pudo unirse a la sala"
+                            }
+                        }
+                    }
+                },
 
-            },
+            )
+            is InicioScreen.Lobby -> LobbyFlow(
+                state = current.lobbyState,
+                onVolver = { uiState = ControladorInicio.irADecide(uiState) },
+                onToggleConfig = { uiState = ControladorInicio.toggleConfigLobby(uiState) },
+                onCartasPorJugadorChange = {
+                    val updatedState = ControladorInicio.actualizarCartasPorJugadorLobby(uiState, it)
+                    uiState = updatedState
+                    val lobby = (updatedState.screen as? InicioScreen.Lobby)?.lobbyState
+                    if (lobby != null && lobby.isLocalHost) {
+                        coroutineScope.launch {
+                            FuncionesGlobales.actualizarConfigLobby(lobby.roomCode, lobby.toDbConfig())
+                        }
+                    }
+                },
+                onEspecialesChange = {
+                    val updatedState = ControladorInicio.actualizarEspecialesLobby(uiState, it)
+                    uiState = updatedState
+                    val lobby = (updatedState.screen as? InicioScreen.Lobby)?.lobbyState
+                    if (lobby != null && lobby.isLocalHost) {
+                        coroutineScope.launch {
+                            FuncionesGlobales.actualizarConfigLobby(lobby.roomCode, lobby.toDbConfig())
+                        }
+                    }
+                },
+                onMaxRobarChange = {
+                    val updatedState = ControladorInicio.actualizarMaxRobarLobby(uiState, it)
+                    uiState = updatedState
+                    val lobby = (updatedState.screen as? InicioScreen.Lobby)?.lobbyState
+                    if (lobby != null && lobby.isLocalHost) {
+                        coroutineScope.launch {
+                            FuncionesGlobales.actualizarConfigLobby(lobby.roomCode, lobby.toDbConfig())
+                        }
+                    }
+                },
+                onEmpezarPartida = {
+                    coroutineScope.launch {
+                        FuncionesGlobales.iniciarPartida(
+                            current.lobbyState.roomCode,
+                            current.lobbyState.toDbConfig()
+                        )
+                    }
+                }
+            )
+            is InicioScreen.Partida -> Tablero(
+                roomCode = current.partidaState.roomCode,
+                numPlayers = current.partidaState.numPlayers,
+                cardsPerPlayer = current.partidaState.cardsPerPlayer,
+                maxDrawCards = current.partidaState.maxDrawCards,
+                isLocalTurn = current.partidaState.isLocalTurn,
+                isLocalHost = current.partidaState.isLocalHost
+            )
+        }
 
-        )
-        is InicioScreen.Lobby -> LobbyFlow(
-            state = current.lobbyState,
-            onVolver = { uiState = ControladorInicio.irADecide(uiState) },
-            onToggleConfig = { uiState = ControladorInicio.toggleConfigLobby(uiState) },
-            onCartasPorJugadorChange = { uiState = ControladorInicio.actualizarCartasPorJugadorLobby(uiState, it) },
-            onEspecialesChange = { uiState = ControladorInicio.actualizarEspecialesLobby(uiState, it) },
-            onMaxRobarChange = { uiState = ControladorInicio.actualizarMaxRobarLobby(uiState, it) },
-            onEmpezarPartida = {
-                partidaStorage.save(
-                    PartidaPrefs(
-                        roomName = current.lobbyState.roomName,
-                        numPlayers = current.lobbyState.maxPlayers
-                    )
-                )
-                uiState = ControladorInicio.empezarPartida(uiState)
-            }
-        )
-        is InicioScreen.Partida -> Tablero(
-            numPlayers = current.partidaState.numPlayers,
-            cardsPerPlayer = current.partidaState.cardsPerPlayer,
-            maxDrawCards = current.partidaState.maxDrawCards,
-            isLocalTurn = current.partidaState.isLocalTurn
-        )
     }
 }
+
+private fun DbSala.toLobbyUiState(existing: LobbyUiState?): LobbyUiState {
+    val sortedJugadores = jugadores.sortedBy { jugador ->
+        if (jugador.numero > 0) jugador.numero else Int.MAX_VALUE
+    }
+    val players = sortedJugadores.mapIndexed { index, jugador ->
+        val numero = if (jugador.numero > 0) jugador.numero else (index + 1)
+        val tag = numero.toString().padStart(3, '0')
+        val nombre = jugador.nombre.takeIf { it.isNotBlank() } ?: "Jugador $tag"
+        LobbyPlayer(
+            name = nombre,
+            tag = tag,
+            isHost = jugador.uid == hostUid
+        )
+    }
+    val maxPlayersValue = if (maxPlayers > 0) maxPlayers else existing?.maxPlayers ?: maxOf(2, players.size)
+    val roomName = nombre.takeIf { it.isNotBlank() }
+        ?: existing?.roomName?.takeIf { it.isNotBlank() }
+        ?: "Sala $codigo"
+    val defaultConfig = LobbyConfig()
+    val config = LobbyConfig(
+        cardsPerPlayer = this.config.cardsPerPlayer.takeIf { it > 0 }
+            ?: existing?.config?.cardsPerPlayer
+            ?: defaultConfig.cardsPerPlayer,
+        specialCardsPercent = this.config.specialCardsPercent.takeIf { it >= 0 }
+            ?: existing?.config?.specialCardsPercent
+            ?: defaultConfig.specialCardsPercent,
+        maxDrawCards = this.config.maxDrawCards.takeIf { it > 0 }
+            ?: existing?.config?.maxDrawCards
+            ?: defaultConfig.maxDrawCards
+    )
+    val showConfig = existing?.showConfig ?: false
+    val isLocalHost = FuncionesGlobales.obtenerJugadorId() == hostUid
+    return LobbyUiState(
+        roomName = roomName,
+        roomCode = codigo,
+        maxPlayers = maxPlayersValue,
+        players = players,
+        config = config,
+        showConfig = showConfig,
+        isLocalHost = isLocalHost,
+        isStarted = started
+    )
+}
+
+private fun LobbyUiState.toDbConfig(): DbLobbyConfig =
+    DbLobbyConfig(
+        cardsPerPlayer = config.cardsPerPlayer,
+        specialCardsPercent = config.specialCardsPercent,
+        maxDrawCards = config.maxDrawCards
+    )
 
 @Composable
 fun InicioParaDecidirHost(
@@ -177,8 +354,6 @@ fun InicioParaDecidirHost(
         val bodySize = (minDim.value * 0.035f).sp
         val panelShape = RoundedCornerShape(minDim * 0.06f)
         val buttonShape = RoundedCornerShape(minDim * 0.05f)
-
-
 
         Column(
             modifier = Modifier
@@ -268,6 +443,7 @@ fun InicioParaDecidirHost(
 fun CrearSala(
     state: CrearSalaState,
     canCreate: Boolean,
+    errorMessage: String?,
     onRoomNameChange: (String) -> Unit,
     onMaxPlayersChange: (Float) -> Unit,
     onPrivateChange: (Boolean) -> Unit,
@@ -412,6 +588,16 @@ fun CrearSala(
                             textAlign = TextAlign.Start
                         )
                     )
+                    if (!errorMessage.isNullOrBlank()) {
+                        Text(
+                            errorMessage,
+                            style = TextStyle(
+                                color = Color(0xFFFFC2C2),
+                                fontSize = (minDim.value * 0.028f).sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        )
+                    }
                     Spacer(Modifier.height(minDim * 0.01f))
                     Button(
                         onClick = onCrearSala,
@@ -428,7 +614,7 @@ fun CrearSala(
                         )
                     ) {
                         Text(
-                            "Crear sala",
+                            "Unirse a sala",
                             style = TextStyle(
                                 fontSize = bodySize,
                                 fontWeight = FontWeight.SemiBold
@@ -444,6 +630,7 @@ fun CrearSala(
 @Composable
 fun UnirsePlaceholder(
     state: UnirseSalaState,
+    errorMessage: String?,
     onVolver: () -> Unit,
     onCodigoChange: (String) -> Unit,
     onUnirseSala: () -> Unit
@@ -537,6 +724,16 @@ fun UnirsePlaceholder(
                             fontWeight = FontWeight.Medium
                         )
                     )
+                    if (!errorMessage.isNullOrBlank()) {
+                        Text(
+                            errorMessage,
+                            style = TextStyle(
+                                color = Color(0xFFFFC2C2),
+                                fontSize = (minDim.value * 0.028f).sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        )
+                    }
                     Spacer(Modifier.height(minDim * 0.01f))
                     Button(
                         onClick = onUnirseSala,

@@ -40,11 +40,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,9 +69,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.franciscor.pruebauni.Base_Datos.FuncionesGlobales
 import com.franciscor.pruebauni.Dataclass.Carta
 import com.franciscor.pruebauni.Dataclass.CartaEspecial
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -79,10 +83,12 @@ import pruebauni.composeapp.generated.resources.logoapp2
 
 @Composable
 fun Tablero(
+    roomCode: String,
     numPlayers: Int = 4,
     cardsPerPlayer: Int = 7,
     maxDrawCards: Int = 2,
     isLocalTurn: Boolean = true,
+    isLocalHost: Boolean = false,
     syncDelayMs: Long = 650L
 ) {
     BoxWithConstraints(
@@ -120,6 +126,8 @@ fun Tablero(
         val handListState = rememberLazyListState()
         val density = LocalDensity.current
         val turnDuration = 10
+        val usesRemoteSync = roomCode.isNotBlank()
+        val mesaScope = rememberCoroutineScope()
 
         val red = Color(0xFFE53935)
         val yellow = Color(0xFFFBC02D)
@@ -162,6 +170,7 @@ fun Tablero(
         var awaitingColorChoice by remember { mutableStateOf(false) }
         var pendingWildCard by remember { mutableStateOf<Carta?>(null) }
         var turnDirection by remember { mutableStateOf(1) }
+        var localPlayerIndex by remember(roomCode) { mutableStateOf(0) }
         var currentTurnIndex by remember(normalizedPlayers, isLocalTurn) {
             mutableStateOf(if (isLocalTurn) 0 else 1.coerceAtMost(normalizedPlayers - 1))
         }
@@ -186,7 +195,7 @@ fun Tablero(
                 repeatMode = RepeatMode.Reverse
             )
         )
-        val isLocalTurnActive = currentTurnIndex == 0
+        val isLocalTurnActive = currentTurnIndex == localPlayerIndex
         val canInteract = isLocalTurnActive &&
             !gameOver &&
             !awaitingColorChoice &&
@@ -208,16 +217,30 @@ fun Tablero(
         }
         val advanceTurn: () -> Unit = {
             if (normalizedPlayers > 1) {
-                val next = currentTurnIndex + turnDirection
-                val wrapped = ((next % normalizedPlayers) + normalizedPlayers) % normalizedPlayers
-                currentTurnIndex = wrapped
-                turnSecondsLeft = turnDuration
+                if (usesRemoteSync) {
+                    if (isLocalTurnActive) {
+                        mesaScope.launch {
+                            FuncionesGlobales.avanzarTurno(roomCode, turnDirection)
+                        }
+                    }
+                } else {
+                    val next = currentTurnIndex + turnDirection
+                    val wrapped = ((next % normalizedPlayers) + normalizedPlayers) % normalizedPlayers
+                    currentTurnIndex = wrapped
+                    turnSecondsLeft = turnDuration
+                }
             }
         }
         val applyColorChoice: (String) -> Unit = { colorName ->
             val wildCard = pendingWildCard
             if (wildCard != null) {
-                discardTop = wildCard.copy(color = colorName)
+                val updatedCard = wildCard.copy(color = colorName)
+                discardTop = updatedCard
+                if (roomCode.isNotBlank()) {
+                    mesaScope.launch {
+                        FuncionesGlobales.actualizarMesaCarta(roomCode, updatedCard)
+                    }
+                }
                 awaitingColorChoice = false
                 pendingWildCard = null
                 if (handCards.isEmpty() || opponentCounts.any { it == 0 }) {
@@ -225,6 +248,44 @@ fun Tablero(
                 } else {
                     advanceTurn()
                 }
+            }
+        }
+
+        LaunchedEffect(roomCode) {
+            if (roomCode.isBlank()) {
+                localPlayerIndex = 0
+            } else {
+                val index = FuncionesGlobales.obtenerIndiceJugadorEnPartida(roomCode)
+                if (index != null) {
+                    localPlayerIndex = index
+                }
+            }
+        }
+
+        DisposableEffect(roomCode) {
+            if (roomCode.isBlank()) {
+                onDispose {}
+            } else {
+                val handle = FuncionesGlobales.escucharMesaCarta(roomCode) { carta ->
+                    if (carta != null) {
+                        discardTop = carta
+                    }
+                }
+                onDispose { handle.remove() }
+            }
+        }
+
+        DisposableEffect(roomCode) {
+            if (roomCode.isBlank()) {
+                onDispose {}
+            } else {
+                val handle = FuncionesGlobales.escucharTurnos(roomCode) { turnos ->
+                    val index = turnos.indexOfFirst { it }
+                    if (index >= 0) {
+                        currentTurnIndex = index
+                    }
+                }
+                onDispose { handle.remove() }
             }
         }
 
@@ -244,6 +305,9 @@ fun Tablero(
                     )
                     playedCard?.let { card ->
                         discardTop = card
+                        if (roomCode.isNotBlank()) {
+                            FuncionesGlobales.actualizarMesaCarta(roomCode, card)
+                        }
                         when (card.specialType) {
                             CartaEspecial.REVERSA -> turnDirection *= -1
                             CartaEspecial.MAS_CUATRO -> {

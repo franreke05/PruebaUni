@@ -97,14 +97,16 @@ object ControladorInicio {
             return state
         }
         val lobby = screen.lobbyState
-        if (lobby.players.size < lobby.maxPlayers) {
+        if (lobby.players.size < 2) {
             return state
         }
         val partidaState = PartidaUiState(
+            roomCode = lobby.roomCode,
             roomName = lobby.roomName,
-            numPlayers = lobby.maxPlayers,
+            numPlayers = lobby.players.size,
             cardsPerPlayer = lobby.config.cardsPerPlayer,
-            maxDrawCards = lobby.config.maxDrawCards
+            maxDrawCards = lobby.config.maxDrawCards,
+            isLocalHost = lobby.isLocalHost
         )
         return state.copy(screen = InicioScreen.Partida(partidaState))
     }

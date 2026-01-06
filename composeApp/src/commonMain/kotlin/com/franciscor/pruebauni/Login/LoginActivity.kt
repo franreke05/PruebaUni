@@ -120,7 +120,7 @@ fun LoginPopup(
                         )
                         Spacer(modifier = Modifier.height(minDim * 0.015f))
                         Text(
-                            text = "Iniciar sesion",
+                            text = "Registro",
                             style = TextStyle(
                                 fontSize = titleSize,
                                 fontWeight = FontWeight.SemiBold,
@@ -128,7 +128,7 @@ fun LoginPopup(
                             )
                         )
                         Text(
-                            text = "Accede con tu nombre, correo y contrasena",
+                            text = "Crea tu cuenta con nombre, correo y contrasena",
                             style = TextStyle(
                                 fontSize = bodySize,
                                 color = Color(0xFF6B7280),
@@ -204,7 +204,7 @@ fun LoginPopup(
                             )
                         ) {
                             Text(
-                                text = "Continuar",
+                                text = "Registrar",
                                 style = TextStyle(fontSize = bodySize, fontWeight = FontWeight.Medium)
                             )
                         }
