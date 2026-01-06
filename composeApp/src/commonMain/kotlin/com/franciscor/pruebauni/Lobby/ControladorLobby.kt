@@ -30,11 +30,9 @@ object ControladorLobby {
     fun crearLobbyState(roomName: String, maxPlayers: Int): LobbyUiState {
         val normalizedMax = maxPlayers.coerceIn(2, 6)
         val code = generarCodigoSala()
-        val players = List(normalizedMax) { index ->
-            val name = "prueba${index + 1}"
-            val tag = (1234 + index).toString()
-            LobbyPlayer(name = name, tag = tag, isHost = index == 0)
-        }
+        val players = listOf(
+            LobbyPlayer(name = "Jugador 1", tag = "0001", isHost = true)
+        )
         return LobbyUiState(
             roomName = roomName,
             roomCode = code,

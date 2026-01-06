@@ -217,6 +217,7 @@ fun LobbyFlow(
                 item {
                     LobbyStartButton(
                         onEmpezarPartida = onEmpezarPartida,
+                        enabled = state.players.size >= state.maxPlayers,
                         bodySize = bodySize,
                         titleFont = unoFont
                     )
@@ -454,15 +455,19 @@ private fun LobbyConfigSlider(
 @Composable
 private fun LobbyStartButton(
     onEmpezarPartida: () -> Unit,
+    enabled: Boolean,
     bodySize: TextUnit,
     titleFont: FontFamily
 ) {
     Button(
         onClick = onEmpezarPartida,
+        enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color(0xFFF0D79C),
-            contentColor = Color(0xFF1A1A1A)
+            contentColor = Color(0xFF1A1A1A),
+            disabledContainerColor = Color(0xFFE3E0D6),
+            disabledContentColor = Color(0xFF7A7A7A)
         ),
         shape = RoundedCornerShape(16.dp)
     ) {

@@ -2,6 +2,7 @@ package com.franciscor.pruebauni.Inicio
 
 import com.franciscor.pruebauni.Lobby.ControladorLobby
 import com.franciscor.pruebauni.Lobby.LobbyUiState
+import com.franciscor.pruebauni.Partida.PartidaUiState
 import kotlin.math.roundToInt
 
 // Controlador de Inicio (orquestacion de Firebase).
@@ -28,6 +29,7 @@ sealed interface InicioScreen {
     data object Crear : InicioScreen
     data object Unirse : InicioScreen
     data class Lobby(val lobbyState: LobbyUiState) : InicioScreen
+    data class Partida(val partidaState: PartidaUiState) : InicioScreen
 }
 
 data class InicioUiState(
@@ -89,7 +91,23 @@ object ControladorInicio {
     fun actualizarMaxRobarLobby(state: InicioUiState, value: Float): InicioUiState =
         actualizarLobbyState(state) { ControladorLobby.actualizarMaxRobar(it, value) }
 
-    fun empezarPartida(state: InicioUiState): InicioUiState = state
+    fun empezarPartida(state: InicioUiState): InicioUiState {
+        val screen = state.screen
+        if (screen !is InicioScreen.Lobby) {
+            return state
+        }
+        val lobby = screen.lobbyState
+        if (lobby.players.size < lobby.maxPlayers) {
+            return state
+        }
+        val partidaState = PartidaUiState(
+            roomName = lobby.roomName,
+            numPlayers = lobby.maxPlayers,
+            cardsPerPlayer = lobby.config.cardsPerPlayer,
+            maxDrawCards = lobby.config.maxDrawCards
+        )
+        return state.copy(screen = InicioScreen.Partida(partidaState))
+    }
 
     private fun actualizarLobbyState(
         state: InicioUiState,

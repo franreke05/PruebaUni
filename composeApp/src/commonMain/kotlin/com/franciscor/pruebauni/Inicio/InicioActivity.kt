@@ -45,6 +45,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import com.franciscor.pruebauni.Lobby.LobbyFlow
+import com.franciscor.pruebauni.Partida.PartidaPrefs
+import com.franciscor.pruebauni.Partida.Tablero
+import com.franciscor.pruebauni.Partida.rememberPartidaStorage
 
 // UI de inicio/mesa. Esta capa solo renderiza estado y dispara acciones.
 // Implementacion Firebase (minima):
@@ -71,6 +74,7 @@ Inicio basado en Firebase (solo identidad):
 
 @Composable
 fun InicioFlow() {
+    val partidaStorage = rememberPartidaStorage()
     // Estado de la pantalla actual.
     var uiState by remember { mutableStateOf(InicioUiState()) }
     val canCreateLobby = ControladorInicio.puedeCrearSala(uiState.crearSalaState)
@@ -127,7 +131,21 @@ fun InicioFlow() {
             onCartasPorJugadorChange = { uiState = ControladorInicio.actualizarCartasPorJugadorLobby(uiState, it) },
             onEspecialesChange = { uiState = ControladorInicio.actualizarEspecialesLobby(uiState, it) },
             onMaxRobarChange = { uiState = ControladorInicio.actualizarMaxRobarLobby(uiState, it) },
-            onEmpezarPartida = { uiState = ControladorInicio.empezarPartida(uiState) }
+            onEmpezarPartida = {
+                partidaStorage.save(
+                    PartidaPrefs(
+                        roomName = current.lobbyState.roomName,
+                        numPlayers = current.lobbyState.maxPlayers
+                    )
+                )
+                uiState = ControladorInicio.empezarPartida(uiState)
+            }
+        )
+        is InicioScreen.Partida -> Tablero(
+            numPlayers = current.partidaState.numPlayers,
+            cardsPerPlayer = current.partidaState.cardsPerPlayer,
+            maxDrawCards = current.partidaState.maxDrawCards,
+            isLocalTurn = current.partidaState.isLocalTurn
         )
     }
 }

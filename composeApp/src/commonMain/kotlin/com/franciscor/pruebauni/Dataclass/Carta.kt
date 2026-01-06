@@ -1,9 +1,16 @@
 package com.franciscor.pruebauni.Dataclass
 
 data class Carta(
-    val id: String,
-    var numero: Int?=0,
-    var color : String?="",
-    var isReverse : Boolean? = false,
-    var isSpecial : Boolean? = false,
+    val imagen: String,
+    val numero: Int? = null,
+    val color: String,
+    val isSpecial: Boolean = false,
+    val specialType: CartaEspecial? = null,
 )
+
+enum class CartaEspecial {
+    MAS_DOS,
+    MAS_CUATRO,
+    REVERSA,
+    CAMBIO_COLOR
+}

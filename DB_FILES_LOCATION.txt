@@ -1,0 +1,23 @@
+Database Integration Files - Where to Put Them
+==============================================
+
+Common (shared logic):
+  composeApp/src/commonMain/kotlin/com/franciscor/pruebauni/data/
+    - Repository interfaces (e.g., RoomRepository)
+    - Data models and DTOs
+    - Use cases / services that do not depend on platform APIs
+
+Android implementation:
+  composeApp/src/androidMain/kotlin/com/franciscor/pruebauni/data/
+    - Android-specific database implementation (Room, SQLDelight, etc.)
+    - Actual classes for expected interfaces in commonMain
+
+iOS implementation:
+  composeApp/src/iosMain/kotlin/com/franciscor/pruebauni/data/
+    - iOS-specific database implementation (SQLDelight, CoreData wrappers, etc.)
+    - Actual classes for expected interfaces in commonMain
+
+Notes:
+  - Keep platform-specific APIs out of commonMain.
+  - If you need shared schemas or migrations, store them in:
+      composeApp/src/commonMain/resources/
