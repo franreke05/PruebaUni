@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "980672933714",
+    "project_id": "pruebaunogame",
+    "storage_bucket": "pruebaunogame.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:980672933714:android:61073f0eec4e068318948b",
+        "android_client_info": {
+          "package_name": "com.franciscor.pruebauni"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDKj8eXXGbBXehkTxIXyDLBkGqFqtsa9_Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

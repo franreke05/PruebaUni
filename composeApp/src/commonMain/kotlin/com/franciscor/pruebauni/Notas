@@ -29,15 +29,11 @@ Además seguire aqui agregando posibles ideas para mejorar nuestro juego del uno
     En las animaciones hay que tener cuidado por lo siguiente, se tiene que ver a la vez y el problema
     grande es que el usuario que tire la carta, vera primero la animación.
 
-    Posibles Soluciones
-        1. Precargar las animaciones en las cartas y que cuando el usuario que tenga el turno y tire la carta
-        a los demás usuarios antes que al primero y sincronizar a los demás usuarios con el que tira la carta
-
-        2.hacer dos animaciones, el usuario que tiene el turno tendra las dos animaciones mientras que los
+     Solucion
+        hacer dos animaciones, el usuario que tiene el turno tendra las dos animaciones mientras que los
         demás solo una, y básicamente la primera animación servira para poder sincronizar lo que ven los otros
         usuarios con el que tira la carta (Opción favorita/Mayor trabajo)
 
-        3. No poner animaciones y que el juego se vea más fluido/soso.
 
 3º Lobby (anterior pantalla)
     En la partida (default) se podrá jugar con la baraja básica del uno, pero cuando se cree la partida

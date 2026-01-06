@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.googleServices)
 }
 
 kotlin {
@@ -22,6 +23,7 @@ kotlin {
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true
+            binaryOption("bundleId", "com.franciscor.pruebauni.ComposeApp")
         }
     }
     
@@ -29,6 +31,10 @@ kotlin {
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
+            implementation(platform("com.google.firebase:firebase-bom:${libs.versions.firebase.bom.get()}"))
+            implementation(libs.firebase.auth.ktx)
+            implementation(libs.firebase.firestore.ktx)
+            implementation(libs.kotlinx.coroutines.play.services)
         }
         commonMain.dependencies {
             implementation(compose.runtime)

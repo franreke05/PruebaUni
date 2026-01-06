@@ -10,6 +10,12 @@
 		161E063DA6C29FACD703F579 /* PruebaUni.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PruebaUni.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXBuildFile section */
+		D1E2F3A405162738495A6B7D /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = B1C2D3E4F5061728394A5B6C /* FirebaseCore */; };
+		D2E3F4A5162738495A6B7C8D /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = B7C8D9E0F112233445566778 /* FirebaseAuth */; };
+		D3E4F5A62738495A6B7C8D9E /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = C1D2E3F405162738495A6B7C /* FirebaseFirestore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		11484F4EE72D9D69769C6193 /* Exceptions for "iosApp" folder in "iosApp" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -41,6 +47,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D1E2F3A405162738495A6B7D /* FirebaseCore in Frameworks */,
+				D2E3F4A5162738495A6B7C8D /* FirebaseAuth in Frameworks */,
+				D3E4F5A62738495A6B7C8D9E /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -85,6 +94,9 @@
 			);
 			name = iosApp;
 			packageProductDependencies = (
+				B1C2D3E4F5061728394A5B6C /* FirebaseCore */,
+				B7C8D9E0F112233445566778 /* FirebaseAuth */,
+				C1D2E3F405162738495A6B7C /* FirebaseFirestore */,
 			);
 			productName = iosApp;
 			productReference = 161E063DA6C29FACD703F579 /* PruebaUni.app */;
@@ -113,6 +125,9 @@
 				Base,
 			);
 			mainGroup = 99ED9AFC09667C87B4FAC05C;
+			packageReferences = (
+				A6F7E4C1B2D3E4F506172839 /* Firebase */,
+			);
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = ED5192EF7B3767F88D1498A4 /* Products */;
@@ -348,6 +363,17 @@
 		};
 /* End XCBuildConfiguration section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		A6F7E4C1B2D3E4F506172839 /* Firebase */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 10.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCConfigurationList section */
 		14997DC429890EE0E452C22C /* Build configuration list for PBXProject "iosApp" */ = {
 			isa = XCConfigurationList;
@@ -368,6 +394,12 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B1C2D3E4F5061728394A5B6C /* FirebaseCore */ = {isa = XCSwiftPackageProductDependency; package = A6F7E4C1B2D3E4F506172839 /* Firebase */; productName = FirebaseCore; };
+		B7C8D9E0F112233445566778 /* FirebaseAuth */ = {isa = XCSwiftPackageProductDependency; package = A6F7E4C1B2D3E4F506172839 /* Firebase */; productName = FirebaseAuth; };
+		C1D2E3F405162738495A6B7C /* FirebaseFirestore */ = {isa = XCSwiftPackageProductDependency; package = A6F7E4C1B2D3E4F506172839 /* Firebase */; productName = FirebaseFirestore; };
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3B7C5AFBD118792F1424B3E6 /* Project object */;
 }
