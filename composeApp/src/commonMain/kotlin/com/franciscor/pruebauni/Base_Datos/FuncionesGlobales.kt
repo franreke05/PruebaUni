@@ -209,7 +209,8 @@ object FuncionesGlobales {
         }
         val updates = mapOf<String, Any?>(
             "$LOBBY_PATH/$codigo/started" to false,
-            "$LOBBY_PATH/$codigo/partidaId" to null
+            "$LOBBY_PATH/$codigo/partidaId" to null,
+            "$PARTIDA_PATH/$codigo" to null
         )
         db.reference().updateChildren(updates)
     }

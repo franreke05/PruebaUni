@@ -214,6 +214,7 @@ fun Tablero(
         var unoCalled by remember { mutableStateOf(false) }
         var hadLocalCards by remember { mutableStateOf(false) }
         var hadOpponentCards by remember { mutableStateOf(false) }
+        var partidaCleanupDone by remember(roomCode) { mutableStateOf(false) }
         val travelProgress = remember { Animatable(0f) }
         val loadingTransition = rememberInfiniteTransition()
         val loadingAlpha by loadingTransition.animateFloat(
@@ -513,6 +514,19 @@ fun Tablero(
                 (canCheckOpponents && opponentCounts.any { it == 0 })
             ) {
                 gameOver = true
+            }
+        }
+
+        LaunchedEffect(gameOver, roomCode, isLocalHost) {
+            if (!gameOver || !usesRemoteSync || roomCode.isBlank() || !isLocalHost) {
+                return@LaunchedEffect
+            }
+            if (partidaCleanupDone) {
+                return@LaunchedEffect
+            }
+            partidaCleanupDone = true
+            runCatching {
+                FuncionesGlobales.finalizarPartida(roomCode)
             }
         }
 
