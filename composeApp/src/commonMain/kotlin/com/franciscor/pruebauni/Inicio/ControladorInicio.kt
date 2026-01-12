@@ -35,7 +35,8 @@ sealed interface InicioScreen {
 data class InicioUiState(
     val screen: InicioScreen = InicioScreen.Decide,
     val crearSalaState: CrearSalaState = CrearSalaState(),
-    val unirseSalaState: UnirseSalaState = UnirseSalaState()
+    val unirseSalaState: UnirseSalaState = UnirseSalaState(),
+    val suppressLobbyAutoStart: Boolean = false
 )
 
 object ControladorInicio {
@@ -43,13 +44,13 @@ object ControladorInicio {
         ControladorLobby.puedeCrearSala(state.roomName)
 
     fun irADecide(state: InicioUiState): InicioUiState =
-        state.copy(screen = InicioScreen.Decide)
+        state.copy(screen = InicioScreen.Decide, suppressLobbyAutoStart = false)
 
     fun irACrear(state: InicioUiState): InicioUiState =
-        state.copy(screen = InicioScreen.Crear)
+        state.copy(screen = InicioScreen.Crear, suppressLobbyAutoStart = false)
 
     fun irAUnirse(state: InicioUiState): InicioUiState =
-        state.copy(screen = InicioScreen.Unirse)
+        state.copy(screen = InicioScreen.Unirse, suppressLobbyAutoStart = false)
 
     fun actualizarNombreSala(state: InicioUiState, name: String): InicioUiState =
         state.copy(crearSalaState = state.crearSalaState.copy(roomName = name))
@@ -76,7 +77,7 @@ object ControladorInicio {
             state.crearSalaState.roomName,
             state.crearSalaState.maxPlayers
         )
-        return state.copy(screen = InicioScreen.Lobby(lobbyState))
+        return state.copy(screen = InicioScreen.Lobby(lobbyState), suppressLobbyAutoStart = false)
     }
 
     fun toggleConfigLobby(state: InicioUiState): InicioUiState =
@@ -90,6 +91,9 @@ object ControladorInicio {
 
     fun actualizarMaxRobarLobby(state: InicioUiState, value: Float): InicioUiState =
         actualizarLobbyState(state) { ControladorLobby.actualizarMaxRobar(it, value) }
+
+    fun actualizarTiempoTurnoLobby(state: InicioUiState, value: Float): InicioUiState =
+        actualizarLobbyState(state) { ControladorLobby.actualizarTiempoTurno(it, value) }
 
     fun empezarPartida(state: InicioUiState): InicioUiState {
         val screen = state.screen
@@ -106,9 +110,13 @@ object ControladorInicio {
             numPlayers = lobby.players.size,
             cardsPerPlayer = lobby.config.cardsPerPlayer,
             maxDrawCards = lobby.config.maxDrawCards,
+            turnDurationSeconds = lobby.config.turnDurationSeconds,
             isLocalHost = lobby.isLocalHost
         )
-        return state.copy(screen = InicioScreen.Partida(partidaState))
+        return state.copy(
+            screen = InicioScreen.Partida(partidaState),
+            suppressLobbyAutoStart = false
+        )
     }
 
     private fun actualizarLobbyState(

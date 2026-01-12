@@ -87,9 +87,11 @@ fun Tablero(
     numPlayers: Int = 4,
     cardsPerPlayer: Int = 7,
     maxDrawCards: Int = 2,
+    turnDurationSeconds: Int = 10,
     isLocalTurn: Boolean = true,
     isLocalHost: Boolean = false,
-    syncDelayMs: Long = 650L
+    syncDelayMs: Long = 650L,
+    onVolverLobby: () -> Unit = {}
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -104,7 +106,6 @@ fun Tablero(
         val normalizedDraw = maxDrawCards.coerceAtLeast(1)
         val opponentCount = normalizedPlayers - 1
         val playerNames = List(normalizedPlayers) { index -> "J${index + 1}" }
-        val opponents = playerNames.drop(1)
         val drawStackCount = normalizedDraw.coerceIn(1, 6)
         val outerPad = minDim * 0.035f
         val cardWidth = minDim * 0.18f
@@ -125,9 +126,10 @@ fun Tablero(
         val handRowWidth = maxWidth - (outerPad * 2f)
         val handListState = rememberLazyListState()
         val density = LocalDensity.current
-        val turnDuration = 10
+        val turnDuration = turnDurationSeconds.coerceIn(5, 60)
         val usesRemoteSync = roomCode.isNotBlank()
         val mesaScope = rememberCoroutineScope()
+        val localPlayerId = remember { FuncionesGlobales.obtenerJugadorId() }
 
         val red = Color(0xFFE53935)
         val yellow = Color(0xFFFBC02D)
@@ -144,39 +146,74 @@ fun Tablero(
         val circleRadius = minDim * 0.38f
         val circleCenterYOffset = -minDim * 0.08f
         val angleStep = 360.0 / normalizedPlayers
-        val opponentPositions = opponents.mapIndexed { index, name ->
+        var localPlayerIndex by remember(roomCode) { mutableStateOf(0) }
+        val seatOrderIndices = remember(localPlayerIndex, normalizedPlayers) {
+            val baseIndex = localPlayerIndex.coerceIn(0, normalizedPlayers - 1)
+            List(normalizedPlayers) { offset -> (baseIndex + offset) % normalizedPlayers }
+        }
+        val opponentPositions = seatOrderIndices.drop(1).mapIndexed { index, playerIndex ->
             val angleDeg = 90.0 + angleStep * (index + 1)
             val angleRad = angleDeg * (PI / 180.0)
             val offsetX = (cos(angleRad) * circleRadius.value).toFloat().dp
             val offsetY = (sin(angleRad) * circleRadius.value).toFloat().dp + circleCenterYOffset
-            OpponentPosition(name = name, offsetX = offsetX, offsetY = offsetY, index = index + 1)
+            val name = playerNames.getOrElse(playerIndex) { "J${playerIndex + 1}" }
+            OpponentPosition(name = name, offsetX = offsetX, offsetY = offsetY, playerIndex = playerIndex)
+        }
+        val opponentNames = seatOrderIndices.drop(1).map { playerIndex ->
+            playerNames.getOrElse(playerIndex) { "J${playerIndex + 1}" }
         }
 
-        val opponentCounts = remember(normalizedPlayers, normalizedCards) {
+        val opponentCounts = remember(normalizedPlayers, normalizedCards, usesRemoteSync) {
             mutableStateListOf<Int>().apply {
-                repeat(opponentCount) { add(normalizedCards) }
+                repeat(opponentCount) { add(if (usesRemoteSync) 0 else normalizedCards) }
             }
         }
-        var handCards by remember(normalizedCards) {
-            mutableStateOf(List(normalizedCards) { crearCartaAleatoria() })
+        var handCards by remember(roomCode, normalizedCards, usesRemoteSync) {
+            mutableStateOf<List<Carta>>(
+                if (usesRemoteSync) {
+                    emptyList<Carta>()
+                } else {
+                    List(normalizedCards) { crearCartaAleatoria() }
+                }
+            )
         }
-        var discardTop by remember { mutableStateOf(crearCartaAleatoria(0)) }
+        var orderedPlayerIds by remember(roomCode) { mutableStateOf<List<String>>(emptyList()) }
+        var mazosByPlayer by remember(roomCode) { mutableStateOf<Map<String, List<Carta>>>(emptyMap()) }
+        val mesaPlaceholder = remember {
+            Carta(
+                imagen = "",
+                numero = null,
+                color = "wild",
+                isSpecial = false,
+                specialType = null
+            )
+        }
+        var discardTop by remember(roomCode) {
+            mutableStateOf(if (usesRemoteSync) mesaPlaceholder else crearCartaAleatoria(0))
+        }
+        var mesaVersion by remember(roomCode) { mutableStateOf(0L) }
+        var turnMesaVersion by remember(roomCode) { mutableStateOf(0L) }
+        var partidaSyncReady by remember(roomCode) { mutableStateOf(false) }
+        var mesaSyncedForTurn by remember(roomCode) { mutableStateOf(false) }
 
         var playPhase by remember { mutableStateOf(PlayPhase.Idle) }
         var selectedIndex by remember { mutableStateOf<Int?>(null) }
         var playedIndex by remember { mutableStateOf<Int?>(null) }
         var playedCard by remember { mutableStateOf<Carta?>(null) }
-        var pendingPlusFourCount by remember { mutableStateOf(0) }
+        var pendingDrawCount by remember { mutableStateOf(0) }
+        var pendingDrawType by remember { mutableStateOf<CartaEspecial?>(null) }
+        var pendingDrawJustPlayedByLocal by remember(roomCode) { mutableStateOf(false) }
         var awaitingColorChoice by remember { mutableStateOf(false) }
         var pendingWildCard by remember { mutableStateOf<Carta?>(null) }
         var turnDirection by remember { mutableStateOf(1) }
-        var localPlayerIndex by remember(roomCode) { mutableStateOf(0) }
         var currentTurnIndex by remember(normalizedPlayers, isLocalTurn) {
             mutableStateOf(if (isLocalTurn) 0 else 1.coerceAtMost(normalizedPlayers - 1))
         }
         var turnSecondsLeft by remember { mutableStateOf(turnDuration) }
         var gameOver by remember { mutableStateOf(false) }
         var unoCalled by remember { mutableStateOf(false) }
+        var hadLocalCards by remember { mutableStateOf(false) }
+        var hadOpponentCards by remember { mutableStateOf(false) }
         val travelProgress = remember { Animatable(0f) }
         val loadingTransition = rememberInfiniteTransition()
         val loadingAlpha by loadingTransition.animateFloat(
@@ -196,18 +233,30 @@ fun Tablero(
             )
         )
         val isLocalTurnActive = currentTurnIndex == localPlayerIndex
+        val turnReady = !usesRemoteSync || (partidaSyncReady && mesaVersion >= turnMesaVersion)
+        val timerReady = turnReady && (!isLocalTurnActive || mesaSyncedForTurn)
         val canInteract = isLocalTurnActive &&
+            turnReady &&
+            (!usesRemoteSync || mesaSyncedForTurn) &&
             !gameOver &&
             !awaitingColorChoice &&
             (playPhase == PlayPhase.Idle || playPhase == PlayPhase.Preview)
         val canDraw = isLocalTurnActive &&
+            turnReady &&
+            (!usesRemoteSync || mesaSyncedForTurn) &&
             !gameOver &&
             !awaitingColorChoice &&
             playPhase == PlayPhase.Idle &&
-            pendingPlusFourCount == 0
+            pendingDrawCount == 0
         val addCardsToHand: (Int) -> Unit = { count ->
             if (count > 0) {
-                handCards = handCards + List(count) { crearCartaAleatoria() }
+                val updated = handCards + List(count) { crearCartaAleatoria() }
+                handCards = updated
+                if (usesRemoteSync) {
+                    mesaScope.launch {
+                        FuncionesGlobales.actualizarMazoJugador(roomCode, localPlayerId, updated)
+                    }
+                }
             }
         }
         val addCardsToOpponent: (Int, Int) -> Unit = { index, count ->
@@ -215,38 +264,71 @@ fun Tablero(
                 opponentCounts[index] = opponentCounts[index] + count
             }
         }
-        val advanceTurn: () -> Unit = {
+        val advanceTurn: (Long?, Int) -> Unit = { mesaVersionOverride, stepsOverride ->
             if (normalizedPlayers > 1) {
+                val steps = stepsOverride.coerceAtLeast(0)
                 if (usesRemoteSync) {
                     if (isLocalTurnActive) {
                         mesaScope.launch {
-                            FuncionesGlobales.avanzarTurno(roomCode, turnDirection)
+                            FuncionesGlobales.avanzarTurno(
+                                roomCode,
+                                turnDirection,
+                                mesaVersionOverride,
+                                steps
+                            )
                         }
                     }
                 } else {
-                    val next = currentTurnIndex + turnDirection
+                    val next = currentTurnIndex + (turnDirection * steps)
                     val wrapped = ((next % normalizedPlayers) + normalizedPlayers) % normalizedPlayers
                     currentTurnIndex = wrapped
                     turnSecondsLeft = turnDuration
                 }
             }
         }
-        val applyColorChoice: (String) -> Unit = { colorName ->
-            val wildCard = pendingWildCard
-            if (wildCard != null) {
-                val updatedCard = wildCard.copy(color = colorName)
-                discardTop = updatedCard
-                if (roomCode.isNotBlank()) {
+        val drawCardsForTurn: (Int, Boolean) -> Unit = { count, endTurnIfNoPlay ->
+            if (count > 0) {
+                val updated = handCards + List(count) { crearCartaAleatoria() }
+                handCards = updated
+                if (usesRemoteSync) {
                     mesaScope.launch {
-                        FuncionesGlobales.actualizarMesaCarta(roomCode, updatedCard)
+                        FuncionesGlobales.actualizarMazoJugador(roomCode, localPlayerId, updated)
                     }
                 }
-                awaitingColorChoice = false
-                pendingWildCard = null
-                if (handCards.isEmpty() || opponentCounts.any { it == 0 }) {
-                    gameOver = true
+                if (endTurnIfNoPlay) {
+                    val hasPlayable = updated.any { carta ->
+                        puedeJugar(carta, discardTop, pendingDrawCount, pendingDrawType)
+                    }
+                    if (!hasPlayable) {
+                        advanceTurn(null, 1)
+                    }
+                }
+            }
+        }
+        val applyColorChoice: (String) -> Unit = { colorName ->
+            pendingWildCard?.let { wildCard ->
+                val updatedCard = wildCard.copy(color = colorName)
+                val finishTurn: (Long?) -> Unit = { mesaVersionOverride ->
+                    awaitingColorChoice = false
+                    pendingWildCard = null
+                    val canCheckOpponents = !usesRemoteSync || mazosByPlayer.isNotEmpty()
+                    if (handCards.isEmpty() || (canCheckOpponents && opponentCounts.any { it == 0 })) {
+                        gameOver = true
+                    } else {
+                        advanceTurn(mesaVersionOverride, 1)
+                    }
+                }
+                if (usesRemoteSync) {
+                    mesaScope.launch {
+                        val newMesaVersion = FuncionesGlobales.actualizarMesaCarta(
+                            roomCode,
+                            updatedCard
+                        )
+                        finishTurn(newMesaVersion)
+                    }
                 } else {
-                    advanceTurn()
+                    discardTop = updatedCard
+                    finishTurn(null)
                 }
             }
         }
@@ -255,23 +337,98 @@ fun Tablero(
             if (roomCode.isBlank()) {
                 localPlayerIndex = 0
             } else {
-                val index = FuncionesGlobales.obtenerIndiceJugadorEnPartida(roomCode)
-                if (index != null) {
+                val order = runCatching {
+                    FuncionesGlobales.obtenerOrdenJugadores(roomCode)
+                }.getOrNull().orEmpty()
+                if (order.isNotEmpty()) {
+                    orderedPlayerIds = order
+                    val index = order.indexOf(localPlayerId)
+                    if (index >= 0) {
+                        localPlayerIndex = index
+                    }
+                } else {
+                    val index = FuncionesGlobales.obtenerIndiceJugadorEnPartida(roomCode)
+                    if (index != null) {
+                        localPlayerIndex = index
+                    }
+                }
+                val diagnostico = runCatching {
+                    FuncionesGlobales.diagnosticarPartida(roomCode)
+                }.getOrNull()
+                if (diagnostico != null) {
+                    println("DIAG PARTIDA $roomCode -> $diagnostico")
+                }
+            }
+        }
+
+        LaunchedEffect(roomCode, partidaSyncReady, orderedPlayerIds) {
+            if (!usesRemoteSync || roomCode.isBlank()) {
+                return@LaunchedEffect
+            }
+            if (!partidaSyncReady || orderedPlayerIds.isNotEmpty()) {
+                return@LaunchedEffect
+            }
+            val order = runCatching {
+                FuncionesGlobales.obtenerOrdenJugadores(roomCode)
+            }.getOrNull().orEmpty()
+            if (order.isNotEmpty()) {
+                orderedPlayerIds = order
+                val index = order.indexOf(localPlayerId)
+                if (index >= 0) {
                     localPlayerIndex = index
                 }
             }
         }
 
-        DisposableEffect(roomCode) {
+        LaunchedEffect(roomCode, currentTurnIndex, localPlayerIndex) {
+            if (!usesRemoteSync) {
+                mesaSyncedForTurn = true
+                return@LaunchedEffect
+            }
             if (roomCode.isBlank()) {
-                onDispose {}
+                mesaSyncedForTurn = true
+                return@LaunchedEffect
+            }
+            if (currentTurnIndex != localPlayerIndex) {
+                pendingDrawJustPlayedByLocal = false
+                mesaSyncedForTurn = false
+                return@LaunchedEffect
+            }
+            mesaSyncedForTurn = false
+            val estado = runCatching {
+                FuncionesGlobales.leerEstadoMesa(roomCode)
+            }.getOrNull()
+            if (estado != null) {
+                mesaVersion = estado.mesaVersion
+                turnMesaVersion = estado.turnMesaVersion
+                estado.mesaCarta?.let { discardTop = it }
+                turnDirection = estado.direction
+                pendingDrawCount = estado.pendingDrawCount
+                pendingDrawType = estado.pendingDrawType
+            }
+            mesaSyncedForTurn = true
+        }
+
+        LaunchedEffect(orderedPlayerIds, mazosByPlayer, seatOrderIndices) {
+            if (!usesRemoteSync) {
+                return@LaunchedEffect
+            }
+            if (orderedPlayerIds.isEmpty()) {
+                return@LaunchedEffect
+            }
+            val countsInOrder = orderedPlayerIds.map { mazosByPlayer[it]?.size ?: 0 }
+            val seatIndices = seatOrderIndices.drop(1)
+            val seatCounts = seatIndices.map { index -> countsInOrder.getOrNull(index) ?: 0 }
+            val paddedOpponentCounts = if (seatCounts.size >= opponentCount) {
+                seatCounts.take(opponentCount)
             } else {
-                val handle = FuncionesGlobales.escucharMesaCarta(roomCode) { carta ->
-                    if (carta != null) {
-                        discardTop = carta
-                    }
-                }
-                onDispose { handle.remove() }
+                seatCounts + List(opponentCount - seatCounts.size) { 0 }
+            }
+            opponentCounts.clear()
+            opponentCounts.addAll(paddedOpponentCounts)
+            val localHand = mazosByPlayer[localPlayerId]
+            if (localHand != null) {
+                handCards = localHand
             }
         }
 
@@ -279,13 +436,83 @@ fun Tablero(
             if (roomCode.isBlank()) {
                 onDispose {}
             } else {
-                val handle = FuncionesGlobales.escucharTurnos(roomCode) { turnos ->
-                    val index = turnos.indexOfFirst { it }
+                val handle = FuncionesGlobales.escucharPartidaEstado(roomCode) { estado ->
+                    partidaSyncReady = estado.turnos.isNotEmpty() || estado.mesaCarta != null
+                    mesaVersion = estado.mesaVersion
+                    turnMesaVersion = estado.turnMesaVersion
+                    estado.mesaCarta?.let { discardTop = it }
+                    turnDirection = estado.direction
+                    pendingDrawCount = estado.pendingDrawCount
+                    pendingDrawType = estado.pendingDrawType
+                    val index = estado.turnos.indexOfFirst { it }
                     if (index >= 0) {
                         currentTurnIndex = index
                     }
                 }
                 onDispose { handle.remove() }
+            }
+        }
+
+        DisposableEffect(roomCode, orderedPlayerIds, seatOrderIndices) {
+            if (roomCode.isBlank()) {
+                onDispose {}
+            } else {
+                val handle = FuncionesGlobales.escucharMazos(roomCode) { mazos ->
+                    mazosByPlayer = mazos
+                    if (!usesRemoteSync) {
+                        return@escucharMazos
+                    }
+                    val localHand = mazos[localPlayerId]
+                    if (localHand != null) {
+                        handCards = localHand
+                    }
+                    if (orderedPlayerIds.isNotEmpty()) {
+                        val countsInOrder = orderedPlayerIds.map { mazos[it]?.size ?: 0 }
+                        val seatIndices = seatOrderIndices.drop(1)
+                        val seatCounts = seatIndices.map { index ->
+                            countsInOrder.getOrNull(index) ?: 0
+                        }
+                        val paddedOpponentCounts = if (seatCounts.size >= opponentCount) {
+                            seatCounts.take(opponentCount)
+                        } else {
+                            seatCounts + List(opponentCount - seatCounts.size) { 0 }
+                        }
+                        opponentCounts.clear()
+                        opponentCounts.addAll(paddedOpponentCounts)
+                    }
+                }
+                onDispose { handle.remove() }
+            }
+        }
+
+        LaunchedEffect(handCards.size) {
+            if (handCards.isNotEmpty()) {
+                hadLocalCards = true
+            }
+        }
+
+        LaunchedEffect(opponentCounts.toList()) {
+            if (opponentCounts.any { it > 0 }) {
+                hadOpponentCards = true
+            }
+        }
+
+        LaunchedEffect(
+            handCards.size,
+            opponentCounts.toList(),
+            awaitingColorChoice,
+            hadLocalCards,
+            hadOpponentCards
+        ) {
+            if (gameOver || awaitingColorChoice) {
+                return@LaunchedEffect
+            }
+            val canCheckLocal = !usesRemoteSync || hadLocalCards
+            val canCheckOpponents = !usesRemoteSync || hadOpponentCards
+            if ((canCheckLocal && handCards.isEmpty()) ||
+                (canCheckOpponents && opponentCounts.any { it == 0 })
+            ) {
+                gameOver = true
             }
         }
 
@@ -303,17 +530,75 @@ fun Tablero(
                         targetValue = 1f,
                         animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing)
                     )
+                    var mesaVersionOverride: Long? = null
+                    var turnStepsOverride = 1
+                    val chainColor = discardTop.color
+                    val isPlusFourChain =
+                        pendingDrawCount > 0 && pendingDrawType == CartaEspecial.MAS_CUATRO
                     playedCard?.let { card ->
-                        discardTop = card
-                        if (roomCode.isNotBlank()) {
-                            FuncionesGlobales.actualizarMesaCarta(roomCode, card)
+                        val appliedCard = if (
+                            isPlusFourChain && card.specialType == CartaEspecial.MAS_CUATRO
+                        ) {
+                            card.copy(color = chainColor)
+                        } else {
+                            card
+                        }
+                        if (!usesRemoteSync) {
+                            discardTop = appliedCard
+                        }
+                        if (usesRemoteSync) {
+                            mesaVersionOverride =
+                                FuncionesGlobales.actualizarMesaCarta(roomCode, appliedCard)
                         }
                         when (card.specialType) {
-                            CartaEspecial.REVERSA -> turnDirection *= -1
+                            CartaEspecial.REVERSA -> {
+                                turnDirection *= -1
+                                if (normalizedPlayers == 2) {
+                                    turnStepsOverride = 0
+                                    turnSecondsLeft = turnDuration
+                                }
+                                if (usesRemoteSync) {
+                                    FuncionesGlobales.actualizarDireccion(roomCode, turnDirection)
+                                }
+                            }
+                            CartaEspecial.MAS_DOS -> {
+                                pendingDrawCount += 2
+                                pendingDrawType = if (isPlusFourChain) {
+                                    CartaEspecial.MAS_CUATRO
+                                } else {
+                                    CartaEspecial.MAS_DOS
+                                }
+                                if (usesRemoteSync) {
+                                    FuncionesGlobales.actualizarPendiente(
+                                        roomCode,
+                                        pendingDrawCount,
+                                        pendingDrawType
+                                    )
+                                }
+                                if (isLocalTurnActive) {
+                                    pendingDrawJustPlayedByLocal = true
+                                }
+                            }
                             CartaEspecial.MAS_CUATRO -> {
-                                pendingPlusFourCount += 1
-                                awaitingColorChoice = true
-                                pendingWildCard = card
+                                pendingDrawCount += 4
+                                pendingDrawType = CartaEspecial.MAS_CUATRO
+                                if (isPlusFourChain) {
+                                    awaitingColorChoice = false
+                                    pendingWildCard = null
+                                } else {
+                                    awaitingColorChoice = true
+                                    pendingWildCard = card
+                                }
+                                if (usesRemoteSync) {
+                                    FuncionesGlobales.actualizarPendiente(
+                                        roomCode,
+                                        pendingDrawCount,
+                                        pendingDrawType
+                                    )
+                                }
+                                if (isLocalTurnActive) {
+                                    pendingDrawJustPlayedByLocal = true
+                                }
                             }
                             CartaEspecial.CAMBIO_COLOR -> {
                                 awaitingColorChoice = true
@@ -327,11 +612,17 @@ fun Tablero(
                             val updated = handCards.toMutableList()
                             updated.removeAt(index)
                             handCards = updated
+                            if (usesRemoteSync) {
+                                mesaScope.launch {
+                                    FuncionesGlobales.actualizarMazoJugador(roomCode, localPlayerId, updated)
+                                }
+                            }
                         }
                     }
-                    gameOver = handCards.isEmpty() || opponentCounts.any { it == 0 }
+                    val canCheckOpponents = !usesRemoteSync || mazosByPlayer.isNotEmpty()
+                    gameOver = handCards.isEmpty() || (canCheckOpponents && opponentCounts.any { it == 0 })
                     if (!gameOver && !awaitingColorChoice) {
-                        advanceTurn()
+                        advanceTurn(mesaVersionOverride, turnStepsOverride)
                     }
                     playPhase = PlayPhase.Settled
                 }
@@ -346,41 +637,89 @@ fun Tablero(
             }
         }
 
-        LaunchedEffect(currentTurnIndex, gameOver, pendingPlusFourCount, awaitingColorChoice) {
+        LaunchedEffect(
+            currentTurnIndex,
+            gameOver,
+            pendingDrawCount,
+            pendingDrawType,
+            awaitingColorChoice,
+            timerReady
+        ) {
             if (gameOver) {
                 return@LaunchedEffect
             }
             if (awaitingColorChoice) {
                 return@LaunchedEffect
             }
-            if (pendingPlusFourCount > 0) {
-                val penaltyCards = pendingPlusFourCount * 4
-                if (currentTurnIndex == 0) {
-                    val hasPlusFour = handCards.any { it.specialType == CartaEspecial.MAS_CUATRO }
-                    if (!hasPlusFour) {
-                        addCardsToHand(penaltyCards)
-                        pendingPlusFourCount = 0
-                        advanceTurn()
+            turnSecondsLeft = turnDuration
+            if (!timerReady) {
+                return@LaunchedEffect
+            }
+            if (pendingDrawCount > 0) {
+                if (isLocalTurnActive) {
+                    if (pendingDrawJustPlayedByLocal) {
                         return@LaunchedEffect
                     }
-                } else {
-                    addCardsToOpponent(currentTurnIndex - 1, penaltyCards)
-                    pendingPlusFourCount = 0
-                    advanceTurn()
+                    val canStack = when (pendingDrawType) {
+                        CartaEspecial.MAS_DOS -> handCards.any { card ->
+                            card.specialType == CartaEspecial.MAS_DOS
+                        }
+                        CartaEspecial.MAS_CUATRO -> {
+                            val chainColor = discardTop.color
+                            handCards.any { card ->
+                                card.specialType == CartaEspecial.MAS_CUATRO ||
+                                    (card.specialType == CartaEspecial.MAS_DOS &&
+                                        card.color.equals(chainColor, ignoreCase = true))
+                            }
+                        }
+                        else -> false
+                    }
+                    if (!canStack) {
+                        addCardsToHand(pendingDrawCount)
+                        pendingDrawCount = 0
+                        pendingDrawType = null
+                        if (usesRemoteSync) {
+                            FuncionesGlobales.actualizarPendiente(roomCode, 0, null)
+                        }
+                        advanceTurn(null, 1)
+                        return@LaunchedEffect
+                    }
+                } else if (!usesRemoteSync) {
+                    val seatIndex = seatOrderIndices.indexOf(currentTurnIndex)
+                    val opponentIndex = seatIndex - 1
+                    addCardsToOpponent(opponentIndex, pendingDrawCount)
+                    pendingDrawCount = 0
+                    pendingDrawType = null
+                    advanceTurn(null, 1)
                     return@LaunchedEffect
                 }
             }
-            turnSecondsLeft = turnDuration
             val turnIndex = currentTurnIndex
             while (turnSecondsLeft > 0 && currentTurnIndex == turnIndex && !gameOver) {
                 delay(1000)
-                if (playPhase == PlayPhase.Syncing || playPhase == PlayPhase.Animating || awaitingColorChoice) {
+                if (playPhase == PlayPhase.Syncing ||
+                    playPhase == PlayPhase.Animating ||
+                    awaitingColorChoice ||
+                    !timerReady
+                ) {
                     continue
                 }
                 turnSecondsLeft -= 1
             }
             if (turnSecondsLeft == 0 && currentTurnIndex == turnIndex && !gameOver) {
-                advanceTurn()
+                if (isLocalTurnActive) {
+                    if (pendingDrawCount > 0) {
+                        addCardsToHand(pendingDrawCount)
+                        pendingDrawCount = 0
+                        pendingDrawType = null
+                        if (usesRemoteSync) {
+                            FuncionesGlobales.actualizarPendiente(roomCode, 0, null)
+                        }
+                    } else {
+                        drawCardsForTurn(normalizedDraw, false)
+                    }
+                }
+                advanceTurn(null, 1)
             }
         }
 
@@ -397,7 +736,13 @@ fun Tablero(
             }
             delay(2000)
             if (handCards.size == 1 && !unoCalled && !gameOver) {
-                handCards = handCards + crearCartaAleatoria() + crearCartaAleatoria()
+                val updated = handCards + crearCartaAleatoria() + crearCartaAleatoria()
+                handCards = updated
+                if (usesRemoteSync) {
+                    mesaScope.launch {
+                        FuncionesGlobales.actualizarMazoJugador(roomCode, localPlayerId, updated)
+                    }
+                }
             }
         }
 
@@ -452,13 +797,30 @@ fun Tablero(
                             .background(Color.White, CircleShape)
                     )
                     BasicText(
-                        if (isLocalTurnActive) "Tu turno" else "Turno ${playerNames[currentTurnIndex]}",
+                        if (isLocalTurnActive) {
+                            "Tu turno"
+                        } else {
+                            val name = playerNames.getOrElse(currentTurnIndex) {
+                                "J${currentTurnIndex + 1}"
+                            }
+                            "Turno $name"
+                        },
                         style = TextStyle(
                             color = Color.White,
                             fontSize = textSmall,
                             fontWeight = FontWeight.Medium
                         )
                     )
+                    if (pendingDrawCount > 0) {
+                        BasicText(
+                            "+$pendingDrawCount",
+                            style = TextStyle(
+                                color = Color(0xFFF6A040),
+                                fontSize = textSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
                     TurnTimer(
                         secondsLeft = turnSecondsLeft,
                         totalSeconds = turnDuration,
@@ -502,8 +864,9 @@ fun Tablero(
                 }
             }
 
-            opponentPositions.forEach { seat ->
-                val count = opponentCounts.getOrNull(seat.index - 1) ?: normalizedCards
+            opponentPositions.forEachIndexed { seatIndex, seat ->
+                val fallbackCount = if (usesRemoteSync) 0 else normalizedCards
+                val count = opponentCounts.getOrNull(seatIndex) ?: fallbackCount
                 OpponentSeat(
                     name = seat.name,
                     cardCount = count,
@@ -515,7 +878,7 @@ fun Tablero(
                     textSize = textSmall,
                     cardGap = seatGap,
                     black = black,
-                    isActive = currentTurnIndex == seat.index,
+                    isActive = currentTurnIndex == seat.playerIndex,
                     modifier = Modifier
                         .align(Alignment.Center)
                         .offset(x = seat.offsetX, y = seat.offsetY)
@@ -532,10 +895,10 @@ fun Tablero(
                         .size(cardWidth, cardHeight)
                         .then(
                             if (canDraw) {
-                                Modifier.pointerInput(playPhase, pendingPlusFourCount) {
+                                Modifier.pointerInput(playPhase, pendingDrawCount) {
                                     detectTapGestures(
                                         onTap = {
-                                            addCardsToHand(normalizedDraw)
+                                            drawCardsForTurn(normalizedDraw, true)
                                         }
                                     )
                                 }
@@ -604,7 +967,7 @@ fun Tablero(
                 ) {
                     itemsIndexed(handCards) { index, carta ->
                         val isSelected = selectedIndex == index
-                        val canPlay = puedeJugar(carta, discardTop, pendingPlusFourCount)
+                        val canPlay = puedeJugar(carta, discardTop, pendingDrawCount, pendingDrawType)
                         val targetLift = when {
                             isSelected && playPhase == PlayPhase.Syncing -> minDim * 0.045f
                             isSelected && playPhase == PlayPhase.Preview -> minDim * 0.03f
@@ -798,7 +1161,7 @@ fun Tablero(
             if (gameOver) {
                 val ranking = buildList {
                     add("Tu" to handCards.size)
-                    opponents.forEachIndexed { index, name ->
+                    opponentNames.forEachIndexed { index, name ->
                         add(name to (opponentCounts.getOrNull(index) ?: 0))
                     }
                 }.sortedBy { it.second }
@@ -835,6 +1198,21 @@ fun Tablero(
                                 fontSize = textSmall
                             )
                         }
+                        Spacer(Modifier.height(minDim * 0.02f))
+                        Button(
+                            onClick = onVolverLobby,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFF0D79C),
+                                contentColor = Color(0xFF1A1A1A)
+                            ),
+                            shape = RoundedCornerShape(minDim * 0.04f)
+                        ) {
+                            Text(
+                                "Volver al lobby",
+                                fontSize = textSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }
@@ -854,7 +1232,7 @@ private data class OpponentPosition(
     val name: String,
     val offsetX: Dp,
     val offsetY: Dp,
-    val index: Int
+    val playerIndex: Int
 )
 
 @Composable
@@ -1025,22 +1403,37 @@ private fun cartaLabel(carta: Carta): String = when (carta.specialType) {
     null -> carta.numero?.toString().orEmpty()
 }
 
-private fun puedeJugar(carta: Carta, top: Carta, pendingPlusFourCount: Int): Boolean {
-    if (pendingPlusFourCount > 0) {
-        return carta.specialType == CartaEspecial.MAS_CUATRO
+private fun puedeJugar(
+    carta: Carta,
+    top: Carta,
+    pendingDrawCount: Int,
+    pendingDrawType: CartaEspecial?
+): Boolean {
+    if (pendingDrawCount > 0) {
+        return when (pendingDrawType) {
+            CartaEspecial.MAS_DOS -> carta.specialType == CartaEspecial.MAS_DOS
+            CartaEspecial.MAS_CUATRO -> {
+                carta.specialType == CartaEspecial.MAS_CUATRO ||
+                    (carta.specialType == CartaEspecial.MAS_DOS &&
+                        carta.color.equals(top.color, ignoreCase = true))
+            }
+            else -> false
+        }
     }
     if (carta.specialType == CartaEspecial.MAS_CUATRO ||
         carta.specialType == CartaEspecial.CAMBIO_COLOR
     ) {
         return true
     }
-    if (top.specialType == CartaEspecial.MAS_CUATRO ||
-        top.specialType == CartaEspecial.CAMBIO_COLOR
-    ) {
+    val topSpecial = top.specialType
+    if (topSpecial != null && carta.specialType == topSpecial) {
         return true
     }
-    if (carta.specialType != null || top.specialType != null) {
-        return carta.color.equals(top.color, ignoreCase = true)
+    if (carta.color.equals(top.color, ignoreCase = true)) {
+        return true
     }
-    return carta.color.equals(top.color, ignoreCase = true) || carta.numero == top.numero
+    if (carta.numero != null && top.numero != null && carta.numero == top.numero) {
+        return true
+    }
+    return false
 }

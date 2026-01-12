@@ -108,13 +108,17 @@ fun InicioFlow() {
                     if (updatedLobby != null) {
                         var nextState = uiState.copy(screen = InicioScreen.Lobby(updatedLobby))
                         if (updatedLobby.isStarted) {
-                            partidaStorage.save(
-                                PartidaPrefs(
-                                    roomName = updatedLobby.roomName,
-                                    numPlayers = maxOf(2, updatedLobby.players.size)
+                            if (!uiState.suppressLobbyAutoStart) {
+                                partidaStorage.save(
+                                    PartidaPrefs(
+                                        roomName = updatedLobby.roomName,
+                                        numPlayers = maxOf(2, updatedLobby.players.size)
+                                    )
                                 )
-                            )
-                            nextState = ControladorInicio.empezarPartida(nextState)
+                                nextState = ControladorInicio.empezarPartida(nextState)
+                            }
+                        } else if (uiState.suppressLobbyAutoStart) {
+                            nextState = nextState.copy(suppressLobbyAutoStart = false)
                         }
                         uiState = nextState
                     }
@@ -214,7 +218,10 @@ fun InicioFlow() {
                             }.onSuccess { sala ->
                                 val lobbyState = sala?.toLobbyUiState(null)
                                 if (lobbyState != null) {
-                                    uiState = uiState.copy(screen = InicioScreen.Lobby(lobbyState))
+                                    uiState = uiState.copy(
+                                        screen = InicioScreen.Lobby(lobbyState),
+                                        suppressLobbyAutoStart = false
+                                    )
                                 } else {
                                     errorMessage = "No se encontro la sala"
                                 }
@@ -260,7 +267,18 @@ fun InicioFlow() {
                         }
                     }
                 },
+                onTiempoTurnoChange = {
+                    val updatedState = ControladorInicio.actualizarTiempoTurnoLobby(uiState, it)
+                    uiState = updatedState
+                    val lobby = (updatedState.screen as? InicioScreen.Lobby)?.lobbyState
+                    if (lobby != null && lobby.isLocalHost) {
+                        coroutineScope.launch {
+                            FuncionesGlobales.actualizarConfigLobby(lobby.roomCode, lobby.toDbConfig())
+                        }
+                    }
+                },
                 onEmpezarPartida = {
+                    uiState = uiState.copy(suppressLobbyAutoStart = false)
                     coroutineScope.launch {
                         FuncionesGlobales.iniciarPartida(
                             current.lobbyState.roomCode,
@@ -274,8 +292,30 @@ fun InicioFlow() {
                 numPlayers = current.partidaState.numPlayers,
                 cardsPerPlayer = current.partidaState.cardsPerPlayer,
                 maxDrawCards = current.partidaState.maxDrawCards,
+                turnDurationSeconds = current.partidaState.turnDurationSeconds,
                 isLocalTurn = current.partidaState.isLocalTurn,
-                isLocalHost = current.partidaState.isLocalHost
+                isLocalHost = current.partidaState.isLocalHost,
+                onVolverLobby = {
+                    coroutineScope.launch {
+                        val codigo = current.partidaState.roomCode
+                        if (current.partidaState.isLocalHost) {
+                            runCatching {
+                                FuncionesGlobales.finalizarPartida(codigo)
+                            }
+                        }
+                        val lobbyState = runCatching {
+                            FuncionesGlobales.leerSalaPorCodigo(codigo)
+                        }.getOrNull()?.toLobbyUiState(null)
+                        uiState = if (lobbyState != null) {
+                            uiState.copy(
+                                screen = InicioScreen.Lobby(lobbyState),
+                                suppressLobbyAutoStart = true
+                            )
+                        } else {
+                            ControladorInicio.irADecide(uiState)
+                        }
+                    }
+                }
             )
         }
 
@@ -310,7 +350,10 @@ private fun DbSala.toLobbyUiState(existing: LobbyUiState?): LobbyUiState {
             ?: defaultConfig.specialCardsPercent,
         maxDrawCards = this.config.maxDrawCards.takeIf { it > 0 }
             ?: existing?.config?.maxDrawCards
-            ?: defaultConfig.maxDrawCards
+            ?: defaultConfig.maxDrawCards,
+        turnDurationSeconds = this.config.turnDurationSeconds.takeIf { it > 0 }
+            ?: existing?.config?.turnDurationSeconds
+            ?: defaultConfig.turnDurationSeconds
     )
     val showConfig = existing?.showConfig ?: false
     val isLocalHost = FuncionesGlobales.obtenerJugadorId() == hostUid
@@ -330,7 +373,8 @@ private fun LobbyUiState.toDbConfig(): DbLobbyConfig =
     DbLobbyConfig(
         cardsPerPlayer = config.cardsPerPlayer,
         specialCardsPercent = config.specialCardsPercent,
-        maxDrawCards = config.maxDrawCards
+        maxDrawCards = config.maxDrawCards,
+        turnDurationSeconds = config.turnDurationSeconds
     )
 
 @Composable

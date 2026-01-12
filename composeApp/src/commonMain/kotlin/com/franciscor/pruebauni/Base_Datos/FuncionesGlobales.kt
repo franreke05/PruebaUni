@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -41,7 +40,8 @@ data class DbJugador(
 data class DbLobbyConfig(
     val cardsPerPlayer: Int = 7,
     val specialCardsPercent: Int = 20,
-    val maxDrawCards: Int = 2
+    val maxDrawCards: Int = 2,
+    val turnDurationSeconds: Int = 10
 )
 
 data class DbSala(
@@ -56,6 +56,13 @@ data class DbSala(
     val started: Boolean = false,
     val partidaId: String? = null,
     val createdAtMillis: Long? = null
+)
+
+data class DbPartidaEstado(
+    val mesaCarta: Carta?,
+    val mesaVersion: Long,
+    val turnos: List<Boolean>,
+    val turnMesaVersion: Long
 )
 
 interface ListenerHandle {
@@ -164,11 +171,14 @@ object FuncionesGlobales {
             players = lobby.players,
             turnos = turnos,
             mesaCarta = mesaInicial.toRtdbCarta(),
+            mesaVersion = 1L,
+            turnMesaVersion = 1L,
             mazos = mazos,
             config = RtdbLobbyConfig(
                 cardsPerPlayer = config.cardsPerPlayer,
                 specialCardsPercent = config.specialCardsPercent,
-                maxDrawCards = config.maxDrawCards
+                maxDrawCards = config.maxDrawCards,
+                turnDurationSeconds = config.turnDurationSeconds
             ),
             createdAt = null
         )
@@ -180,8 +190,26 @@ object FuncionesGlobales {
             "$LOBBY_PATH/$codigo/config" to RtdbLobbyConfig(
                 cardsPerPlayer = config.cardsPerPlayer,
                 specialCardsPercent = config.specialCardsPercent,
-                maxDrawCards = config.maxDrawCards
+                maxDrawCards = config.maxDrawCards,
+                turnDurationSeconds = config.turnDurationSeconds
             )
+        )
+        db.reference().updateChildren(updates)
+    }
+
+    suspend fun finalizarPartida(codigo: String) {
+        if (codigo.isBlank()) {
+            return
+        }
+        val playerId = getLocalPlayerId()
+        val lobbySnapshot = lobbyRef(codigo).valueEvents.first()
+        val lobby = lobbySnapshot.value<RtdbLobby>() ?: return
+        if (lobby.hostUid != playerId) {
+            return
+        }
+        val updates = mapOf<String, Any?>(
+            "$LOBBY_PATH/$codigo/started" to false,
+            "$LOBBY_PATH/$codigo/partidaId" to null
         )
         db.reference().updateChildren(updates)
     }
@@ -190,7 +218,8 @@ object FuncionesGlobales {
         val configData = RtdbLobbyConfig(
             cardsPerPlayer = config.cardsPerPlayer,
             specialCardsPercent = config.specialCardsPercent,
-            maxDrawCards = config.maxDrawCards
+            maxDrawCards = config.maxDrawCards,
+            turnDurationSeconds = config.turnDurationSeconds
         )
         lobbyRef(codigo).child("config").setValue(configData)
     }
@@ -213,21 +242,35 @@ object FuncionesGlobales {
     }
 
     suspend fun actualizarMesaCarta(codigo: String, carta: Carta) {
-        partidaRef(codigo).child("mesaCarta").setValue(carta.toRtdbCarta())
+        val serializer = RtdbPartida.serializer().nullable
+        partidaRef(codigo).runTransaction(serializer) { current ->
+            val partida = current ?: return@runTransaction current
+            val nextVersion = (partida.mesaVersion.takeIf { it > 0 } ?: 0L) + 1L
+            partida.copy(
+                mesaCarta = carta.toRtdbCarta(),
+                mesaVersion = nextVersion
+            )
+        }
     }
 
     suspend fun avanzarTurno(codigo: String, direction: Int) {
         val safeDirection = if (direction >= 0) 1 else -1
-        val serializer = ListSerializer(Boolean.serializer()).nullable
-        partidaRef(codigo).child("turnos").runTransaction(serializer) { current ->
-            val turnos = current ?: return@runTransaction current
+        val serializer = RtdbPartida.serializer().nullable
+        partidaRef(codigo).runTransaction(serializer) { current ->
+            val partida = current ?: return@runTransaction current
+            val turnos = partida.turnos
             if (turnos.isEmpty()) {
-                return@runTransaction turnos
+                return@runTransaction partida
             }
             val currentIndex = turnos.indexOfFirst { it }
             val resolvedIndex = if (currentIndex >= 0) currentIndex else 0
             val nextIndex = ((resolvedIndex + safeDirection) % turnos.size + turnos.size) % turnos.size
-            List(turnos.size) { index -> index == nextIndex }
+            val nextTurnos = List(turnos.size) { index -> index == nextIndex }
+            val mesaVersion = if (partida.mesaVersion > 0) partida.mesaVersion else 0L
+            partida.copy(
+                turnos = nextTurnos,
+                turnMesaVersion = mesaVersion
+            )
         }
     }
 
@@ -254,6 +297,26 @@ object FuncionesGlobales {
                 .collect { snapshot ->
                     val turnos = runCatching { snapshot.value<List<Boolean>>() }.getOrNull() ?: emptyList()
                     onCambio(turnos)
+                }
+        }
+        return JobListenerHandle(job)
+    }
+
+    fun escucharPartidaEstado(codigo: String, onCambio: (DbPartidaEstado) -> Unit): ListenerHandle {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val job = scope.launch {
+            partidaRef(codigo)
+                .valueEvents
+                .collect { snapshot ->
+                    val partida = runCatching { snapshot.value<RtdbPartida>() }.getOrNull()
+                    onCambio(
+                        DbPartidaEstado(
+                            mesaCarta = partida?.mesaCarta?.toCarta(),
+                            mesaVersion = partida?.mesaVersion ?: 0L,
+                            turnos = partida?.turnos ?: emptyList(),
+                            turnMesaVersion = partida?.turnMesaVersion ?: 0L
+                        )
+                    )
                 }
         }
         return JobListenerHandle(job)
@@ -331,7 +394,8 @@ private fun DataSnapshot.toDbSala(): DbSala? {
         config = DbLobbyConfig(
             cardsPerPlayer = lobby.config.cardsPerPlayer,
             specialCardsPercent = lobby.config.specialCardsPercent,
-            maxDrawCards = lobby.config.maxDrawCards
+            maxDrawCards = lobby.config.maxDrawCards,
+            turnDurationSeconds = lobby.config.turnDurationSeconds
         ),
         started = lobby.started,
         partidaId = lobby.partidaId,
@@ -372,7 +436,8 @@ private data class RtdbPlayer(
 private data class RtdbLobbyConfig(
     val cardsPerPlayer: Int = 7,
     val specialCardsPercent: Int = 20,
-    val maxDrawCards: Int = 2
+    val maxDrawCards: Int = 2,
+    val turnDurationSeconds: Int = 10
 )
 
 @Serializable
@@ -440,6 +505,8 @@ private data class RtdbPartida(
     val players: Map<String, RtdbPlayer> = emptyMap(),
     val turnos: List<Boolean> = emptyList(),
     val mesaCarta: RtdbCarta? = null,
+    val mesaVersion: Long = 0,
+    val turnMesaVersion: Long = 0,
     val mazos: Map<String, List<RtdbCarta>> = emptyMap(),
     val config: RtdbLobbyConfig = RtdbLobbyConfig(),
     val createdAt: Long? = null

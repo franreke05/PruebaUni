@@ -23,7 +23,8 @@ data class LobbyUiState(
 data class LobbyConfig(
     val cardsPerPlayer: Int = 7,
     val specialCardsPercent: Int = 20,
-    val maxDrawCards: Int = 2
+    val maxDrawCards: Int = 2,
+    val turnDurationSeconds: Int = 10
 )
 
 object ControladorLobby {
@@ -64,5 +65,10 @@ object ControladorLobby {
     fun actualizarMaxRobar(state: LobbyUiState, value: Float): LobbyUiState {
         val normalized = value.roundToInt().coerceIn(1, 6)
         return state.copy(config = state.config.copy(maxDrawCards = normalized))
+    }
+
+    fun actualizarTiempoTurno(state: LobbyUiState, value: Float): LobbyUiState {
+        val normalized = value.roundToInt().coerceIn(5, 60)
+        return state.copy(config = state.config.copy(turnDurationSeconds = normalized))
     }
 }

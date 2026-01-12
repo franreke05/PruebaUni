@@ -70,6 +70,7 @@ fun LobbyFlow(
     onCartasPorJugadorChange: (Float) -> Unit,
     onEspecialesChange: (Float) -> Unit,
     onMaxRobarChange: (Float) -> Unit,
+    onTiempoTurnoChange: (Float) -> Unit,
     onEmpezarPartida: () -> Unit
 ) {
     var reveal by remember { mutableStateOf(false) }
@@ -210,6 +211,7 @@ fun LobbyFlow(
                         onCartasPorJugadorChange = onCartasPorJugadorChange,
                         onEspecialesChange = onEspecialesChange,
                         onMaxRobarChange = onMaxRobarChange,
+                        onTiempoTurnoChange = onTiempoTurnoChange,
                         shape = cardShape,
                         bodySize = bodySize,
                         labelSize = labelSize,
@@ -320,6 +322,7 @@ private fun LobbyConfigCard(
     onCartasPorJugadorChange: (Float) -> Unit,
     onEspecialesChange: (Float) -> Unit,
     onMaxRobarChange: (Float) -> Unit,
+    onTiempoTurnoChange: (Float) -> Unit,
     shape: RoundedCornerShape,
     bodySize: TextUnit,
     labelSize: TextUnit,
@@ -371,7 +374,7 @@ private fun LobbyConfigCard(
             }
             if (!isOpen) {
                 Text(
-                    "Cartas ${config.cardsPerPlayer} · Especiales ${config.specialCardsPercent}% · Robar ${config.maxDrawCards}",
+                    "Cartas ${config.cardsPerPlayer} · Especiales ${config.specialCardsPercent}% · Robar ${config.maxDrawCards} · Turno ${config.turnDurationSeconds}s",
                     style = TextStyle(
                         color = Color(0xFF6B7280),
                         fontSize = labelSize,
@@ -408,6 +411,17 @@ private fun LobbyConfigCard(
                     value = config.maxDrawCards.toFloat(),
                     valueRange = 1f..6f,
                     onValueChange = onMaxRobarChange,
+                    enabled = canEdit,
+                    bodySize = bodySize,
+                    labelSize = labelSize,
+                    titleFont = titleFont
+                )
+                LobbyConfigSlider(
+                    title = "Tiempo de turno",
+                    valueLabel = "${config.turnDurationSeconds}s",
+                    value = config.turnDurationSeconds.toFloat(),
+                    valueRange = 5f..60f,
+                    onValueChange = onTiempoTurnoChange,
                     enabled = canEdit,
                     bodySize = bodySize,
                     labelSize = labelSize,
